@@ -24,12 +24,14 @@ def carregar_contexto_pessoa(pessoa_id):
     return ctx
 
 
-def esperas_ativas(unidade_id):
+def esperas_ativas(unidade_id, quando=None):
+    """Esperas válidas no instante `quando` (hora da identificação; logs coletados depois de
+    uma queda usam a hora real do evento, não a de agora)."""
     return db.query(
         "SELECT e.*, p.nome AS responsavel_nome FROM responsavel_em_espera e "
         "JOIN responsaveis r ON r.id = e.responsavel_id JOIN pessoas p ON p.id = r.pessoa_id "
-        "WHERE e.unidade_id = %s AND e.consumido_em IS NULL AND e.expira_em > now() ORDER BY e.identificado_em",
-        (unidade_id,),
+        "WHERE e.unidade_id = %s AND e.consumido_em IS NULL AND e.expira_em > %s AND e.identificado_em <= %s ORDER BY e.identificado_em",
+        (unidade_id, quando or agora_utc(), quando or agora_utc()),
     )
 
 
@@ -56,7 +58,7 @@ def decidir(pessoa_id, sentido, unidade, quando=None):
     # saída
     if p["tipo"] == "aluno" and ctx["aluno"] and ctx["turma"]:
         vinculos = db.query("SELECT * FROM aluno_responsavel WHERE aluno_id = %s", (ctx["aluno"]["id"],))
-        esperas = esperas_ativas(unidade["id"])
+        esperas = esperas_ativas(unidade["id"], quando or agora_utc())
         avisos = avisos_do_dia(ctx["aluno"]["id"], agora_local.date())
         return regras.decidir_saida_aluno(ctx["aluno"], ctx["turma"], vinculos, esperas, avisos, agora_local)
     return regras.Decisao(True, tipos.SAIDA)

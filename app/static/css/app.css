@@ -1,6 +1,7 @@
 .status-online { color: #198754; }
 .status-offline { color: #dc3545; }
 .status-desconhecido { color: #6c757d; }
+.status-contingencia { color: #fd7e14; font-weight: bold; }
 .evento-negado { background: #fff3f3; }
 .evento-manual { background: #fff8e1; }
 #camera { width: 100%; max-width: 480px; background: #000; border-radius: 8px; }

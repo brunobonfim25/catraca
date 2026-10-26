@@ -16,6 +16,7 @@
     <div class="collapse navbar-collapse" id="nav">
       <ul class="navbar-nav me-auto">
         <li class="nav-item"><a class="nav-link" href="{{ url_for('painel.dashboard') }}">Painel</a></li>
+        {% if not usuario.unidade_id %}<li class="nav-item"><a class="nav-link" href="{{ url_for('painel.rede') }}">Rede</a></li>{% endif %}
         {% if tem_permissao('liberar_manual') %}<li class="nav-item"><a class="nav-link" href="{{ url_for('painel.recepcao') }}">Recepção</a></li>{% endif %}
         <li class="nav-item"><a class="nav-link" href="{{ url_for('painel.presenca') }}">Presença</a></li>
         <li class="nav-item"><a class="nav-link" href="{{ url_for('pessoas.lista') }}">Pessoas</a></li>

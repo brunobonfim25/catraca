@@ -39,6 +39,37 @@ def registrar_comandos(app):
             )
             click.echo(f"superadmin criado: {email}")
 
+    @app.cli.command("configurar-local")
+    @click.option("--empresa-id", type=int, required=True, help="id da empresa na nuvem")
+    @click.option("--unidade-id", type=int, required=True, help="id da unidade na nuvem")
+    @click.option("--empresa", default="Empresa")
+    @click.option("--unidade", default="Unidade")
+    def configurar_local(empresa_id, unidade_id, empresa, unidade):
+        """Servidor da escola (Modelo 3): cria empresa/unidade com os MESMOS ids da nuvem e
+        reserva uma faixa de ids (unidade_id × 10 milhões) pra não colidir no espelho."""
+        n = db.migrar()
+        click.echo(f"{n} migration(s) aplicada(s)")
+        db.execute("INSERT INTO empresas (id, nome) VALUES (%s,%s) ON CONFLICT (id) DO UPDATE SET nome = EXCLUDED.nome", (empresa_id, empresa))
+        db.execute("INSERT INTO unidades (id, empresa_id, nome) VALUES (%s,%s,%s) ON CONFLICT (id) DO UPDATE SET nome = EXCLUDED.nome", (unidade_id, empresa_id, unidade))
+        base = unidade_id * 10_000_000
+        for s in db.query("SELECT sequencename, last_value FROM pg_sequences WHERE schemaname = 'public'"):
+            db.execute("SELECT setval(%s, GREATEST(COALESCE(%s, 0), %s), true)", (s["sequencename"], s["last_value"], base))
+        db.execute("UPDATE usuarios_admin SET unidade_id = %s, empresa_id = %s WHERE unidade_id IS NULL AND perfil <> 'superadmin'", (unidade_id, empresa_id))
+        click.echo(f"unidade {unidade_id} ({unidade}) pronta; ids locais a partir de {base + 1}")
+
+    @app.cli.command("token-espelho")
+    @click.option("--unidade-id", type=int, required=True)
+    def token_espelho(unidade_id):
+        """Nuvem: gera o token que o servidor local usa pra enviar o espelho (ESPELHO_TOKEN)."""
+        import json
+        import secrets
+
+        token = secrets.token_urlsafe(24)
+        n = db.execute("UPDATE unidades SET config = config || %s WHERE id = %s", (json.dumps({"espelho_token": token}), unidade_id))
+        if not n:
+            raise click.ClickException(f"unidade {unidade_id} não existe na nuvem")
+        click.echo(f"ESPELHO_TOKEN={token}")
+
     @app.cli.command("telegram-webhook")
     def telegram_webhook():
         """Registra BASE_URL/api/telegram/webhook no Telegram."""

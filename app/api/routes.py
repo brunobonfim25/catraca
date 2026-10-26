@@ -43,7 +43,8 @@ def monitor(token, endpoint):
     _checar_token(token)
     payload = request.get_json(silent=True) or {}
     d = _dispositivo_do_payload(payload.get("device_id"))
-    dispositivos.atualizar_contato(d["id"], "online")
+    # contingência só sai pelo operation_mode (tratado abaixo); outras notificações não limpam
+    dispositivos.atualizar_contato(d["id"], "contingencia" if d["status"] == "contingencia" else "online")
     if endpoint == "dao":
         n = 0
         for mudanca in payload.get("object_changes") or []:

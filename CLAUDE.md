@@ -38,7 +38,7 @@ Fora do MVP: WhatsApp, integração com Agenda ActiveSoft (app que a escola usa)
 - **Front:** HTML/CSS/JS + Bootstrap 5. Sem React no MVP. Webcam via `getUserMedia` no navegador.
 - **Jobs:** worker Python separado para sincronização com catracas e envio de Telegram (fila em tabela PostgreSQL com `SELECT ... FOR UPDATE SKIP LOCKED`; Redis só se precisar depois).
 - **Tempo real no painel:** polling a cada 5 s no MVP; WebSocket depois.
-- **Deploy:** Railway (web + worker + PostgreSQL), variáveis de ambiente, `git push origin main` faz deploy. Fuso `America/Sao_Paulo`; salvar timestamps em UTC (`timestamptz`) e converter na exibição.
+- **Deploy:** servidor local na escola (web + worker + PostgreSQL; ver 8b) e Railway só com web + PostgreSQL em `MODO=nuvem`; variáveis de ambiente, `git push origin main` faz deploy da nuvem. Fuso `America/Sao_Paulo`; salvar timestamps em UTC (`timestamptz`) e converter na exibição.
 - **Ambiente do Bruno:** Windows, PowerShell, repo local em `C:\Users\Bruno Bonfim\`. Comandos de terminal devem ser PowerShell.
 - **Padrão de código:** módulos pequenos, funções puras onde der, docstring curta em PT-BR, nomes em português para domínio (`aluno`, `responsavel`, `turma`) e inglês para infra (`db`, `queue`, `adapter`).
 - **Segredos:** nunca no código. `.env` local, variáveis no Railway. Senha admin da catraca é segredo.
@@ -148,6 +148,29 @@ Todas as tabelas de domínio têm `unidade_id` (e `empresa_id` via unidade). Ín
 6. Motor de regras + modo Pro na saída + responsável em espera + painel da recepção.
 7. Painel/relatórios, exceções manuais, auditoria, LGPD (exclusão).
 8. Operação assistida no Recreio; depois replicar nas outras 3 unidades (só cadastro de unidade + dispositivos).
+
+## 8b. Decisão de arquitetura (26/10/2026) — Modelo 3
+
+Depois de ouvir um integrador Control iD com clientes em condomínio, colégio e clube, o Bruno
+escolheu: **servidor local na escola + nuvem como espelho**.
+
+- **Servidor local** (`MODO=local`, mini PC Windows com NSSM/waitress ou Linux com systemd):
+  web + worker + PostgreSQL. A catraca fala só com ele (Monitor e modo Pro na LAN). Cadastro,
+  foto e regras são feitos nele. Fica ligado antes da primeira entrada.
+- **Nuvem** (`MODO=nuvem`, Railway): recebe o espelho de cada linha alterada
+  (`espelho_outbox` por trigger → `POST /api/espelho/<token>`), serve o painel consolidado
+  da rede (`/painel/rede`) e é **somente leitura**. É o backup vivo.
+- **Ids** por faixa (`flask configurar-local` → `unidade_id × 10M`) para as unidades
+  conviverem na mesma base da nuvem. A nuvem cria empresa/unidade; o local usa os mesmos ids.
+- **Contingência** (catraca sem servidor): aluno de turma "só com responsável" recebe na
+  catraca a regra `Nexosix - so entrada` (só portal de entrada). Offline, a catraca nega a
+  saída dele; a recepção libera pelo painel/portão PCD. Status `contingencia` fica no painel
+  até a catraca avisar que voltou (`operation_mode`).
+- Por que não o Monitor direto na nuvem: a saída em modo Pro precisa de resposta em tempo real;
+  internet da escola oscila. Notificação continua funcionando em qualquer modo (o Monitor
+  empurra eventos; o Telegram sai do servidor local quando houver internet).
+- Fica para depois: cadastro pela nuvem descendo para o local (hoje o fluxo é só local → nuvem)
+  e failover automático (hoje é manual: restaurar backup num PC novo).
 
 ## 9. Como trabalhar com o Bruno
 

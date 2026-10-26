@@ -41,6 +41,7 @@ Coluna **Hardware** fica `pendente` até alguém rodar na catraca real e anotar 
 3. `0MS1` (primário) é o leitor **de fora** (entrada) e `0MS2` o **de dentro** (saída). Depende de qual iDFace foi configurado como primário na instalação.
 4. Giro à direita = entrada quando `catra_side_to_enter = "0"`. Validar com um giro real e o `catra_event` recebido.
 5. **Modo por leitor**: o briefing quer entrada Standalone e saída Pro. A doc só configura `general.online` por equipamento (= o conjunto). Se não houver modo por leitor, o conjunto roda em **Pro** e o servidor libera a entrada incondicionalmente para aluno/funcionário ativo (contingência cobre a queda do servidor). O motor de regras já está pronto pros dois casos.
+   **Contingência**: a regra carregada na catraca pra aluno "só com responsável" (`Nexosix - so entrada`) está ligada só ao `portal_access_rules` do portal de entrada. Confirmar no hardware que a catraca nega o giro de saída pra esse aluno quando o servidor está fora.
 6. Resposta `{"result":{"event":7}}` **sem** `actions` mantém a catraca travada (usado quando o responsável se identifica do lado de fora só pra "chegar"). Se na prática liberar, trocar por `event: 6` com `message` amigável — configurável em `unidades.config.responsavel_resposta`.
 7. Tempo máximo de resposta do servidor no modo online. A doc não dá o número. O endpoint `/api/catraca/<token>/new_user_identified.fcgi` responde em uma consulta SQL; medir em campo.
 8. `destroy_objects users` já apaga a foto. Chamamos `user_destroy_image` antes por garantia.

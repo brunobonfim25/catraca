@@ -1,0 +1,19 @@
+# /etc/systemd/system/nexosix-web.service — servidor local em Linux (mini PC Ubuntu/Debian)
+# sudo useradd -r -m nexosix; clone em /opt/nexosix; python -m venv /opt/nexosix/.venv; pip install -r requirements.txt
+# sudo systemctl enable --now nexosix-web nexosix-worker
+[Unit]
+Description=Nexosix Acesso - web (servidor local)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=nexosix
+WorkingDirectory=/opt/nexosix
+EnvironmentFile=/opt/nexosix/.env
+ExecStartPre=/opt/nexosix/.venv/bin/flask --app wsgi bootstrap
+ExecStart=/opt/nexosix/.venv/bin/gunicorn wsgi:app --bind 0.0.0.0:8000 --workers 2 --threads 4 --timeout 60
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

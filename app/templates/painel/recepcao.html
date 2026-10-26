@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block conteudo %}
 <h3>Recepção</h3>
+<div id="alerta-catraca" class="alert alert-warning py-2" style="display:none"></div>
 <div class="row g-3">
   <div class="col-lg-4">
     <div class="card"><div class="card-header">Responsáveis esperando</div>
@@ -50,6 +51,10 @@ async function atualizar() {
   const d = await r.json();
   document.getElementById('esperas').innerHTML = d.esperas.length ? d.esperas.map(e => `<li class="list-group-item"><b>${esc(e.responsavel)}</b> chegou para buscar <b>${esc(e.alunos || '—')}</b><br><small>${e.identificado_em} · vale até ${e.expira_em}</small>
     <form method="post" action="/painel/espera/${e.id}/encerrar" class="d-inline float-end"><button class="btn btn-sm btn-outline-secondary">encerrar</button></form></li>`).join('') : '<li class="list-group-item text-muted">ninguém esperando</li>';
+  const ruins = d.dispositivos.filter(x => x.status !== 'online');
+  const al = document.getElementById('alerta-catraca');
+  al.style.display = ruins.length ? '' : 'none';
+  al.innerHTML = ruins.map(x => `<b>${esc(x.nome)}</b>: ${x.status === 'contingencia' ? 'em contingência — sem o servidor a catraca NEGA a saída de quem precisa de responsável; libere aqui pelo painel' : (x.status === 'offline' ? 'offline — eventos serão coletados quando voltar' : x.status)}`).join('<br>');
   document.getElementById('negados').innerHTML = d.ultimos.filter(e => e.negado).slice(0, 8).map(e => `<li class="list-group-item evento-negado"><b>${e.hora}</b> ${esc(e.pessoa || 'não identificado')} — ${esc(e.rotulo)}<br><small>${esc(e.detalhes && e.detalhes.motivo || '')}</small></li>`).join('') || '<li class="list-group-item text-muted">nenhum</li>';
 }
 atualizar(); setInterval(atualizar, 5000);

@@ -13,7 +13,7 @@ def test_cadastro_enfileira_e_worker_envia(sincronizado, simulador):
     assert dp["foto_sync_status"] == "sincronizado" and dp["regras_sync_status"] == "sincronizado"
     assert dp["user_id_no_dispositivo"] == sincronizado["user_ids"]["maria"]
     regras = est.tabelas["user_access_rules"]
-    assert len(regras) == 4 and len({r["access_rule_id"] for r in regras}) == 1  # uma regra "liberado" pra todos
+    assert len(regras) == 4 and len({r["access_rule_id"] for r in regras}) == 2  # "liberado" e "só entrada" (Maria)
     assert db.query("SELECT count(*) AS n FROM fila_sync WHERE status <> 'concluido'", one=True)["n"] == 0
 
 

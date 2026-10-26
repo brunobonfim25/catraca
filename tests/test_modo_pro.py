@@ -57,7 +57,7 @@ def test_fluxo_completo_responsavel_depois_aluno(cliente, sincronizado):
 def test_espera_expirada_nao_vale(cliente, sincronizado):
     ids = sincronizado["user_ids"]
     identificar(cliente, ids["ana"], "0MS1", hoje_as(17))
-    db.execute("UPDATE responsavel_em_espera SET expira_em = now() - interval '1 minute'")
+    db.execute("UPDATE responsavel_em_espera SET expira_em = identificado_em + interval '1 minute'")  # venceu às 17:01
     assert identificar(cliente, ids["maria"], "0MS2", hoje_as(17, 20))["event"] == 6
 
 

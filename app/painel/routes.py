@@ -21,10 +21,38 @@ def _periodo():
     return date.fromisoformat(ini), date.fromisoformat(fim)
 
 
+@bp.get("/painel/rede")
+@login_obrigatorio
+def rede():
+    """Consolidado das unidades (na nuvem é a tela principal da direção da rede)."""
+    unidades = unidades_visiveis(g.usuario)
+    ids = [u["id"] for u in unidades] or [0]
+    presenca = {r["unidade_id"]: r["n"] for r in db.query("SELECT unidade_id, count(*) AS n FROM presenca WHERE dentro AND unidade_id = ANY(%s) GROUP BY unidade_id", (ids,))}
+    hoje = {r["unidade_id"]: r for r in db.query(
+        "SELECT e.unidade_id, count(*) FILTER (WHERE e.tipo = ANY(%s)) AS entradas, count(*) FILTER (WHERE e.tipo = %s) AS atrasos, "
+        "count(*) FILTER (WHERE e.tipo = ANY(%s)) AS negados, count(*) FILTER (WHERE e.tipo = %s) AS antecipadas, max(e.ocorrido_em) AS ultimo "
+        "FROM eventos e JOIN unidades u ON u.id = e.unidade_id WHERE e.unidade_id = ANY(%s) "
+        "AND e.ocorrido_em >= date_trunc('day', now() AT TIME ZONE u.fuso) AT TIME ZONE u.fuso GROUP BY e.unidade_id",
+        (list(tipos.ENTRADAS), tipos.ENTRADA_ATRASADA, list(tipos.NEGADOS), tipos.SAIDA_ANTECIPADA, ids),
+    )}
+    disps = {}
+    for d in db.query("SELECT unidade_id, nome, status FROM dispositivos WHERE ativo AND unidade_id = ANY(%s) ORDER BY nome", (ids,)):
+        disps.setdefault(d["unidade_id"], []).append(d)
+    alunos = {r["unidade_id"]: r["n"] for r in db.query("SELECT p.unidade_id, count(*) AS n FROM pessoas p WHERE p.tipo = 'aluno' AND p.status = 'ativo' AND p.unidade_id = ANY(%s) GROUP BY p.unidade_id", (ids,))}
+    linhas = []
+    for u in unidades:
+        cfg = u["config"] or {}
+        linhas.append({"unidade": u, "dentro": presenca.get(u["id"], 0), "alunos": alunos.get(u["id"], 0), "hoje": hoje.get(u["id"]),
+                       "dispositivos": disps.get(u["id"], []), "espelho_em": cfg.get("espelho_ultimo_em"), "espelho_erro": cfg.get("espelho_erro")})
+    return render_template("painel/rede.html", linhas=linhas)
+
+
 @bp.get("/painel")
 @login_obrigatorio
 def dashboard():
     if g.unidade is None:
+        if unidades_visiveis(g.usuario):
+            return redirect(url_for("painel.rede"))
         return redirect(url_for("painel.unidades"))
     un = g.unidade
     turmas = db.query(

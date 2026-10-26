@@ -1,0 +1,8 @@
+# /etc/caddy/Caddyfile — HTTPS na LAN pra webcam funcionar (ver deploy/windows/Caddyfile)
+{
+    auto_https disable_redirects
+}
+https://nexosix.local {
+    tls internal
+    reverse_proxy 127.0.0.1:8000
+}

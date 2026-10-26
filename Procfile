@@ -1,2 +1,1 @@
-web: flask --app wsgi bootstrap && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60
-worker: python -m worker.main
+web: flask --app wsgi bootstrap && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120

@@ -20,6 +20,12 @@ class Config:
     BASE_URL = os.environ.get("BASE_URL", "http://localhost:5000").rstrip("/")
     TZ_PADRAO = os.environ.get("TZ_PADRAO", "America/Sao_Paulo")
     CONTROLID_SIMULADOR = os.environ.get("CONTROLID_SIMULADOR", "0") == "1"
+    # Modelo 3: 'local' = servidor da escola (decide, grava, espelha pra nuvem);
+    # 'nuvem' = painel consolidado somente leitura que recebe o espelho.
+    MODO = os.environ.get("MODO", "local")
+    NUVEM_URL = os.environ.get("NUVEM_URL", "").rstrip("/")
+    ESPELHO_TOKEN = os.environ.get("ESPELHO_TOKEN", "")
+    ESPELHO_INTERVALO_SEG = int(os.environ.get("ESPELHO_INTERVALO_SEG", "15"))
     # Tempo que um responsável fica "em espera" depois de se identificar no leitor de fora
     ESPERA_RESPONSAVEL_MIN = int(os.environ.get("ESPERA_RESPONSAVEL_MIN", "15"))
     # Fotos: limite de upload (a catraca aceita até 2 MB; 1 MB já é mais do que o suficiente)
@@ -35,4 +41,6 @@ class TestConfig(Config):
     SECRET_KEY = "teste"
     MONITOR_TOKEN = "tok-teste"
     TELEGRAM_WEBHOOK_SECRET = "seg-teste"
-    WTF_CSRF_ENABLED = False
+    MODO = "local"
+    NUVEM_URL = ""
+    ESPELHO_TOKEN = ""

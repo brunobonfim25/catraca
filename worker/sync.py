@@ -69,18 +69,45 @@ def _garantir_user_id(adapter, dispositivo, pessoa):
     return user_id
 
 
-def _regra_liberado(adapter, dispositivo):
+NOME_REGRA_SO_ENTRADA = "Nexosix - so entrada"
+
+
+def _regra(adapter, dispositivo, chave, nome, portais=None):
+    """Garante a regra na catraca (cria uma vez, guarda o id em dispositivos.config)."""
     cfg = dispositivo.get("config") or {}
-    if cfg.get("regra_liberado_id"):
-        return int(cfg["regra_liberado_id"])
-    achadas = adapter.load_objects("access_rules", where={"access_rules": {"name": NOME_REGRA_LIBERADO}}, fields=["id"])
+    if cfg.get(chave):
+        return int(cfg[chave])
+    achadas = adapter.load_objects("access_rules", where={"access_rules": {"name": nome}}, fields=["id"])
     if achadas:
         regra_id = int(achadas[0]["id"])
     else:
-        regra_id = adapter.criar_regra_horario(NOME_REGRA_LIBERADO, 0, 86399, dias=(0, 1, 2, 3, 4, 5, 6))
-    db.execute("UPDATE dispositivos SET config = config || %s WHERE id = %s", (json.dumps({"regra_liberado_id": regra_id}), dispositivo["id"]))
-    dispositivo["config"] = {**cfg, "regra_liberado_id": regra_id}
+        regra_id = adapter.criar_regra_horario(nome, 0, 86399, dias=(0, 1, 2, 3, 4, 5, 6), portais=portais)
+    db.execute("UPDATE dispositivos SET config = config || %s WHERE id = %s", (json.dumps({chave: regra_id}), dispositivo["id"]))
+    dispositivo["config"] = {**cfg, chave: regra_id}
     return regra_id
+
+
+def _regra_liberado(adapter, dispositivo):
+    return _regra(adapter, dispositivo, "regra_liberado_id", NOME_REGRA_LIBERADO)
+
+
+def _regra_so_entrada(adapter, dispositivo):
+    """Contingência (catraca sem servidor): aluno que só sai com responsável NÃO tem regra no
+    portal de saída. Offline a catraca nega a saída e a recepção libera pelo painel/portão PCD."""
+    rows = db.query("SELECT portal_id FROM dispositivo_leitores WHERE dispositivo_id = %s AND sentido = 'entrada' AND portal_id IS NOT NULL", (dispositivo["id"],))
+    portais = [r["portal_id"] for r in rows] or [1]  # [SUP] portal 1 = entrada no idBlock Next
+    return _regra(adapter, dispositivo, "regra_so_entrada_id", NOME_REGRA_SO_ENTRADA, portais=portais)
+
+
+def _precisa_responsavel(pessoa):
+    if pessoa["tipo"] != "aluno":
+        return False
+    r = db.query("SELECT a.saida_autonoma, t.exige_responsavel_saida FROM alunos a JOIN turmas t ON t.id = a.turma_id WHERE a.pessoa_id = %s", (pessoa["id"],), one=True)
+    if not r:
+        return False
+    if r["saida_autonoma"] is not None:
+        return not r["saida_autonoma"]
+    return bool(r["exige_responsavel_saida"])
 
 
 def processar_item(item, adapter, dispositivo):
@@ -130,6 +157,8 @@ def processar_item(item, adapter, dispositivo):
     if tipo == "set_rules":
         if pessoa["status"] != "ativo" or pessoa["tipo"] == "visitante":
             adapter.revoke(user_id)
+        elif _precisa_responsavel(pessoa):
+            adapter.set_access_rules(user_id, [_regra_so_entrada(adapter, dispositivo)])
         else:
             adapter.set_access_rules(user_id, [_regra_liberado(adapter, dispositivo)])
         db.execute("UPDATE dispositivo_pessoa SET regras_sync_status = 'sincronizado', atualizado_em = now() WHERE dispositivo_id = %s AND pessoa_id = %s", (dispositivo["id"], pessoa["id"]))

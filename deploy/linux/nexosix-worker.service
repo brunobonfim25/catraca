@@ -1,0 +1,14 @@
+[Unit]
+Description=Nexosix Acesso - worker (catracas, Telegram, espelho)
+After=network-online.target postgresql.service nexosix-web.service
+
+[Service]
+User=nexosix
+WorkingDirectory=/opt/nexosix
+EnvironmentFile=/opt/nexosix/.env
+ExecStart=/opt/nexosix/.venv/bin/python -m worker.main
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -376,5 +376,8 @@ def processar_catra_event(dispositivo, payload):
 def processar_operation_mode(dispositivo, payload):
     om = payload.get("operation_mode") or {}
     nome = str(om.get("mode_name") or "").lower()
-    tipo = tipos.DISPOSITIVO_CONTINGENCIA if "conting" in nome else tipos.DISPOSITIVO_ONLINE
+    contingencia = "conting" in nome
+    tipo = tipos.DISPOSITIVO_CONTINGENCIA if contingencia else tipos.DISPOSITIVO_ONLINE
     registrar(dispositivo["unidade_id"], tipo, agora_utc(), dispositivo_id=dispositivo["id"], origem="sistema", detalhes=om)
+    # Fica vermelho no painel até a catraca avisar que voltou ao modo online
+    db.execute("UPDATE dispositivos SET status = %s, ultimo_contato = now() WHERE id = %s", ("contingencia" if contingencia else "online", dispositivo["id"]))

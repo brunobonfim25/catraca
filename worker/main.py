@@ -10,7 +10,7 @@ import time
 from dotenv import load_dotenv
 
 from app import db
-from . import collect, lgpd, notify, sync
+from . import collect, espelho, lgpd, notify, sync
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -30,6 +30,11 @@ def rodada(adaptadores, contadores):
     enviados, falhas = notify.enviar_pendentes()
     if enviados or falhas:
         log.info("telegram: %d enviados, %d falhas", enviados, falhas)
+    if time.time() - contadores["espelho_em"] >= int(os.environ.get("ESPELHO_INTERVALO_SEG", "15")):
+        n = espelho.enviar()
+        if n:
+            log.info("espelho: %d itens enviados à nuvem", n)
+        contadores["espelho_em"] = time.time()
     if time.time() - contadores["lgpd_em"] > 3600:
         n = lgpd.purgar_desligados()
         if n:
@@ -38,10 +43,14 @@ def rodada(adaptadores, contadores):
 
 
 def main():
+    if os.environ.get("MODO", "local") == "nuvem":
+        log.error("MODO=nuvem não roda worker: catracas e Telegram são do servidor da escola. Saindo.")
+        return
     db.init(os.environ["DATABASE_URL"], 1, 4)
+    db.gucs = {"nexosix.outbox": "on"}
     intervalo = int(os.environ.get("WORKER_INTERVALO_SEG", "5"))
     adaptadores = {}
-    contadores = {"coleta": 0, "lgpd_em": 0}
+    contadores = {"coleta": 0, "lgpd_em": 0, "espelho_em": 0}
     log.info("worker iniciado (intervalo %ss)", intervalo)
     while True:
         try:

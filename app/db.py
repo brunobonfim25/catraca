@@ -21,6 +21,9 @@ from psycopg2 import pool as pgpool
 _pool = None
 _lock = threading.Lock()
 _url = None
+# Parâmetros de sessão aplicados em toda transação (ex.: nexosix.outbox='on' no servidor local,
+# que liga os triggers do espelho). Preenchido por create_app/worker a partir do MODO.
+gucs = {}
 
 
 def init(database_url, minconn=1, maxconn=10):
@@ -70,6 +73,8 @@ def transacao():
     with conexao() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         try:
+            for chave, valor in gucs.items():
+                cur.execute(f"SET LOCAL {chave} = %s", (valor,))
             yield cur
             conn.commit()
         except Exception:

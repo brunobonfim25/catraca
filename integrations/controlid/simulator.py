@@ -448,10 +448,15 @@ def criar_simulador(estado=None):
         except requests.RequestException as e:
             estado.monitor_falhas.append(f"{endpoint}: {e}")
 
-    def _tem_regra_valida(user_id):
+    def _tem_regra_valida(user_id, portal_id=None):
         # [DOC] bloqueios primeiro; se nenhum bate, permissões. Simplificado: basta uma permissão
-        # ligada ao usuário cujo time_span cubra o horário atual. Sem regra → negado.
+        # ligada ao usuário cujo time_span cubra o horário atual e cujo portal_access_rules inclua
+        # o portal usado (regra sem portal vale em todos). Sem regra → negado.
         regras_ids = {r["access_rule_id"] for r in estado.tabelas["user_access_rules"] if r["user_id"] == user_id}
+        if portal_id is not None:
+            com_portal = {r["access_rule_id"] for r in estado.tabelas["portal_access_rules"]}
+            neste = {r["access_rule_id"] for r in estado.tabelas["portal_access_rules"] if r["portal_id"] == portal_id}
+            regras_ids = {r for r in regras_ids if r not in com_portal or r in neste}
         for g in estado.tabelas["user_groups"]:
             if g["user_id"] == user_id:
                 regras_ids |= {r["access_rule_id"] for r in estado.tabelas["group_access_rules"] if r["group_id"] == g["group_id"]}
@@ -505,7 +510,7 @@ def criar_simulador(estado=None):
                     _registrar_giro(log, portal, girar)
                 return log
         # Standalone / contingência: decide local
-        evento = 7 if _tem_regra_valida(user_id) else 6
+        evento = 7 if _tem_regra_valida(user_id, portal) else 6
         log = _gravar_log(event=evento, user_id=user_id, portal_id=portal)
         if evento == 7:
             _registrar_giro(log, portal, girar)

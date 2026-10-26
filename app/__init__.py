@@ -13,6 +13,8 @@ def create_app(config_object=None):
     app.config.from_object(config_object or Config)
 
     db.init(app.config["DATABASE_URL"], app.config.get("DB_POOL_MIN", 1), app.config.get("DB_POOL_MAX", 10))
+    # Servidor local liga o outbox do espelho; a nuvem nunca (ela só recebe)
+    db.gucs = {"nexosix.outbox": "on"} if app.config.get("MODO", "local") == "local" else {}
 
     from .auth.routes import bp as auth_bp
     from .pessoas.routes import bp as pessoas_bp
@@ -20,7 +22,11 @@ def create_app(config_object=None):
     from .painel.routes import bp as painel_bp
     from .api.routes import bp as api_bp
     from .notificacoes.routes import bp as notificacoes_bp
+    from .espelho.routes import bp as espelho_bp, instalar_somente_leitura
 
+    app.register_blueprint(espelho_bp)
+    if app.config.get("MODO") == "nuvem":
+        instalar_somente_leitura(app)
     app.register_blueprint(auth_bp)
     app.register_blueprint(pessoas_bp)
     app.register_blueprint(dispositivos_bp)
@@ -40,7 +46,11 @@ def create_app(config_object=None):
     @app.route("/health")
     def health():
         db.query("SELECT 1")
-        return {"ok": True}
+        return {"ok": True, "modo": app.config.get("MODO", "local")}
+
+    @app.context_processor
+    def _modo():
+        return {"modo": app.config.get("MODO", "local")}
 
     from .cli import registrar_comandos
 
