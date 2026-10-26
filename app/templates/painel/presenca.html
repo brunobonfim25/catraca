@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center no-print">
+  <h3>{{ 'Lista de evacuação' if evacuacao else 'Presença agora' }}</h3>
+  <form class="d-flex gap-2" method="get">
+    <select class="form-select" name="turma_id" onchange="this.form.submit()"><option value="">Todas as turmas</option>{% for t in turmas %}<option value="{{ t.id }}" {{ 'selected' if t.id == turma_id }}>{{ t.nome }}</option>{% endfor %}</select>
+    <a class="btn btn-outline-danger" href="{{ url_for('painel.presenca', evacuacao=1, turma_id=turma_id) }}">Evacuação</a>
+    <button type="button" class="btn btn-outline-secondary" onclick="window.print()">Imprimir</button>
+  </form>
+</div>
+{% if evacuacao %}<p class="text-danger"><b>Quem está dentro agora.</b> Confira cada nome no ponto de encontro.</p>{% endif %}
+<table class="table table-sm bg-white">
+  <thead><tr><th>Aluno</th><th>Turma</th><th>Status</th><th>Desde</th>{% if evacuacao %}<th>Conferido</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for a in alunos if not evacuacao or a.dentro %}
+    <tr class="{{ 'table-success' if a.dentro else '' }}"><td><a href="{{ url_for('pessoas.detalhe', pessoa_id=a.id) }}">{{ a.nome }}</a></td><td>{{ a.turma }}</td><td>{{ 'DENTRO' if a.dentro else 'fora' }}</td><td>{{ a.desde|hora(fuso) if a.desde else '' }}</td>{% if evacuacao %}<td>☐</td>{% endif %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+<h5 class="mt-4">Funcionários</h5>
+<table class="table table-sm bg-white">
+  <tbody>{% for f in funcionarios if not evacuacao or f.dentro %}<tr class="{{ 'table-success' if f.dentro }}"><td>{{ f.nome }}</td><td>{{ f.cargo or '' }}</td><td>{{ 'DENTRO' if f.dentro else 'fora' }}</td><td>{{ f.desde|hora(fuso) if f.desde else '' }}</td></tr>{% endfor %}</tbody>
+</table>
+{% endblock %}

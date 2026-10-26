@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>Auditoria</h3>
+<table class="table table-sm bg-white"><thead><tr><th>Quando</th><th>Quem</th><th>Ação</th><th>Entidade</th><th>Antes</th><th>Depois</th></tr></thead><tbody>
+{% for l in linhas %}<tr><td>{{ l.criado_em|data_hora(fuso) }}</td><td>{{ l.usuario_nome or 'sistema' }}</td><td>{{ l.acao }}</td><td>{{ l.entidade }} {{ l.entidade_id or '' }}</td><td><small><code>{{ l.antes or '' }}</code></small></td><td><small><code>{{ l.depois or '' }}</code></small></td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

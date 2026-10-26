@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h3 class="mb-0">Catracas e leitores</h3>
+  {% if tem_permissao('gerir_dispositivos') %}<a class="btn btn-primary" href="{{ url_for('dispositivos.novo') }}">+ Catraca</a>{% endif %}
+</div>
+<p class="small text-muted">Fila de sincronização: {% for f in fila %}<b>{{ f.n }}</b> {{ f.status }} · {% else %}vazia{% endfor %}</p>
+<table class="table bg-white align-middle">
+  <thead><tr><th>Nome</th><th>Modelo</th><th>IP</th><th>Modo</th><th>Status</th><th>Último contato</th><th>Firmware</th><th></th></tr></thead>
+  <tbody>
+  {% for d in dispositivos %}
+    <tr class="{{ 'text-muted' if not d.ativo }}"><td><a href="{{ url_for('dispositivos.detalhe', dispositivo_id=d.id) }}">{{ d.nome }}</a></td><td>{{ d.modelo or '' }}</td><td>{{ d.ip }}:{{ d.porta }}</td><td>{{ d.modo }}</td>
+      <td><span class="status-{{ d.status }}">● {{ d.status }}</span></td><td>{{ d.ultimo_contato|data_hora(unidade.fuso) if d.ultimo_contato else '—' }}</td><td>{{ d.firmware or '' }}</td>
+      <td>{% if tem_permissao('gerir_dispositivos') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dispositivos.editar', dispositivo_id=d.id) }}">editar</a>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="8" class="text-muted">Nenhuma catraca cadastrada. Para testar sem hardware: rode <code>python -m integrations.controlid.simulator</code> e cadastre com IP 127.0.0.1 porta 8085.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h3 class="mb-0">Pessoas</h3>
+  {% if tem_permissao('cadastrar_pessoas') %}
+  <div class="btn-group">
+    <a class="btn btn-primary" href="{{ url_for('pessoas.aluno_novo') }}">+ Aluno</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('pessoas.responsavel_novo') }}">+ Responsável</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('pessoas.funcionario_novo') }}">+ Funcionário</a>
+  </div>
+  {% endif %}
+</div>
+<form class="row g-2 mb-3" method="get">
+  <div class="col-md-4"><input class="form-control" name="q" value="{{ termo }}" placeholder="nome, matrícula ou telefone"></div>
+  <div class="col-md-2"><select class="form-select" name="tipo"><option value="">Todos</option>{% for k in ['aluno','responsavel','funcionario','visitante'] %}<option value="{{ k }}" {{ 'selected' if tipo == k }}>{{ k }}</option>{% endfor %}</select></div>
+  <div class="col-md-2"><select class="form-select" name="turma_id"><option value="">Todas as turmas</option>{% for t in turmas %}<option value="{{ t.id }}" {{ 'selected' if t.id == turma_id }}>{{ t.nome }}</option>{% endfor %}</select></div>
+  <div class="col-md-2 form-check mt-2 ms-3"><input class="form-check-input" type="checkbox" name="desligados" value="1" id="des" {{ 'checked' if request.args.get('desligados') == '1' }}><label class="form-check-label" for="des">incluir desligados</label></div>
+  <div class="col-md-1"><button class="btn btn-outline-primary">Buscar</button></div>
+</form>
+<table class="table table-sm bg-white align-middle">
+  <thead><tr><th></th><th>Nome</th><th>Tipo</th><th>Turma / cargo</th><th>Status</th><th>Foto</th><th>Telegram</th></tr></thead>
+  <tbody>
+  {% for p in pessoas %}
+    <tr>
+      <td>{% if p.tem_foto %}<img class="foto-mini" src="{{ url_for('pessoas.foto_jpg', pessoa_id=p.id) }}" alt="">{% endif %}</td>
+      <td><a href="{{ url_for('pessoas.detalhe', pessoa_id=p.id) }}">{{ p.nome }}</a></td>
+      <td>{{ p.tipo }}</td><td>{{ p.turma_nome or p.cargo or '' }}</td>
+      <td><span class="badge bg-{{ {'ativo':'success','bloqueado':'warning','desligado':'secondary'}[p.status] }}">{{ p.status }}</span></td>
+      <td>{% if p.tem_foto %}✔{% elif p.tipo != 'visitante' %}<a class="text-danger" href="{{ url_for('pessoas.foto', pessoa_id=p.id) }}">sem foto</a>{% endif %}</td>
+      <td>{% if p.responsavel_id %}{{ '✔' if p.telegram_chat_id else '—' }}{% endif %}</td>
+    </tr>
+  {% else %}<tr><td colspan="7" class="text-muted">Nenhuma pessoa.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

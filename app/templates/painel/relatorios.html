@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>Relatórios</h3>
+<form class="row g-2 mb-3 no-print" method="get">
+  <div class="col-md-2"><select class="form-select" name="tipo">{% for k, v in [('frequencia','Frequência'),('atrasos','Atrasos'),('antecipadas','Saídas antecipadas'),('negados','Acessos negados')] %}<option value="{{ k }}" {{ 'selected' if k == tipo }}>{{ v }}</option>{% endfor %}</select></div>
+  <div class="col-md-2"><input class="form-control" type="date" name="de" value="{{ de }}"></div>
+  <div class="col-md-2"><input class="form-control" type="date" name="ate" value="{{ ate }}"></div>
+  <div class="col-md-2"><select class="form-select" name="turma_id"><option value="">Todas as turmas</option>{% for t in turmas %}<option value="{{ t.id }}" {{ 'selected' if t.id == turma_id }}>{{ t.nome }}</option>{% endfor %}</select></div>
+  <div class="col-md-2"><button class="btn btn-primary">Gerar</button> <button type="button" class="btn btn-outline-secondary" onclick="window.print()">Imprimir</button></div>
+</form>
+{% if tipo == 'frequencia' %}
+<p class="text-muted">{{ dias_uteis }} dia(s) útil(eis) no período.</p>
+<table class="table table-sm bg-white"><thead><tr><th>Aluno</th><th>Turma</th><th>Dias presente</th><th>%</th><th>Atrasos</th><th></th></tr></thead><tbody>
+{% for l in linhas %}<tr><td>{{ l.nome }}</td><td>{{ l.turma }}</td><td>{{ l.dias_presente }}</td><td>{{ ((l.dias_presente / dias_uteis * 100) if dias_uteis else 0)|round|int }}%</td><td>{{ l.atrasos }}</td><td><a href="{{ url_for('painel.historico', pessoa_id=l.id, de=de, ate=ate) }}">histórico</a></td></tr>{% endfor %}
+</tbody></table>
+{% else %}
+<table class="table table-sm bg-white"><thead><tr><th>Quando</th><th>Pessoa</th><th>Turma</th><th>Evento</th><th>Detalhe</th></tr></thead><tbody>
+{% for l in linhas %}<tr><td>{{ l.ocorrido_em|data_hora(fuso) }}</td><td>{{ l.nome or '—' }}</td><td>{{ l.turma or '' }}</td><td>{{ rotulos.get(l.tipo, l.tipo) }}</td><td><small>{{ l.justificativa or l.detalhes.get('motivo') or l.detalhes.get('alerta') or '' }}{% if l.autorizado_nome %} — por {{ l.autorizado_nome }}{% endif %}</small></td></tr>{% else %}<tr><td colspan="5" class="text-muted">nada no período</td></tr>{% endfor %}
+</tbody></table>
+{% endif %}
+{% endblock %}

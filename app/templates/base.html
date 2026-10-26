@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Nexosix Acesso{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
+</head>
+<body class="bg-light">
+{% if usuario %}
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-3">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="{{ url_for('painel.dashboard') }}">Nexosix Acesso</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
+    <div class="collapse navbar-collapse" id="nav">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('painel.dashboard') }}">Painel</a></li>
+        {% if tem_permissao('liberar_manual') %}<li class="nav-item"><a class="nav-link" href="{{ url_for('painel.recepcao') }}">Recepção</a></li>{% endif %}
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('painel.presenca') }}">Presença</a></li>
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('pessoas.lista') }}">Pessoas</a></li>
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('painel.turmas') }}">Turmas</a></li>
+        {% if tem_permissao('ver_relatorios') %}<li class="nav-item"><a class="nav-link" href="{{ url_for('painel.relatorios') }}">Relatórios</a></li>{% endif %}
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('dispositivos.lista') }}">Catracas</a></li>
+        {% if tem_permissao('gerir_usuarios') %}<li class="nav-item"><a class="nav-link" href="{{ url_for('auth.usuarios') }}">Usuários</a></li>{% endif %}
+        {% if tem_permissao('ver_auditoria') %}<li class="nav-item"><a class="nav-link" href="{{ url_for('painel.auditoria') }}">Auditoria</a></li>{% endif %}
+      </ul>
+      <span class="navbar-text me-3">
+        {% if unidade %}<a class="link-light" href="{{ url_for('painel.unidades') }}">{{ unidade.nome }}</a>{% else %}<a class="link-warning" href="{{ url_for('painel.unidades') }}">Escolher unidade</a>{% endif %}
+        · {{ usuario.nome }} <small class="text-secondary">({{ usuario.perfil }})</small>
+      </span>
+      <a class="btn btn-outline-light btn-sm me-2" href="{{ url_for('auth.trocar_senha') }}">Senha</a>
+      <a class="btn btn-outline-light btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
+    </div>
+  </div>
+</nav>
+{% endif %}
+<main class="container-fluid px-4">
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in msgs %}<div class="alert alert-{{ cat }} py-2">{{ m }}</div>{% endfor %}
+  {% endwith %}
+  {% block conteudo %}{% endblock %}
+</main>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

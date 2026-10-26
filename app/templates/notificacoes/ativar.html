@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>Ativar avisos no Telegram — {{ responsavel.nome }}</h3>
+{% if not bot %}<div class="alert alert-danger">TELEGRAM_BOT_USERNAME não configurado no servidor.</div>{% endif %}
+{% if responsavel.telegram_chat_id %}<div class="alert alert-success">Já ativado em {{ responsavel.telegram_ativado_em|data_hora }}. Gerar novo token só se o responsável trocou de celular.</div>{% endif %}
+<div class="row g-3">
+  <div class="col-md-4 text-center">
+    <img src="{{ url_for('notificacoes.qr', responsavel_id=responsavel.id) }}" class="img-fluid border rounded" alt="QR Code">
+    <p class="mt-2"><a href="{{ link }}" target="_blank">{{ link }}</a></p>
+    <form method="post" action="{{ url_for('notificacoes.novo_token', responsavel_id=responsavel.id) }}"><button class="btn btn-sm btn-outline-secondary">Gerar novo link</button></form>
+  </div>
+  <div class="col-md-6">
+    <ol>
+      <li>O responsável abre a câmera do celular e aponta para o QR Code (ou toca no link).</li>
+      <li>O Telegram abre o bot <b>@{{ bot }}</b> com o botão <b>Iniciar</b>. Ele toca.</li>
+      <li>O bot responde "Avisos ativados" e esta tela passa a mostrar ✔ (atualize).</li>
+    </ol>
+    <p class="text-muted small">O link é de uso único e fica ligado só a este responsável.</p>
+  </div>
+</div>
+{% endblock %}

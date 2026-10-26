@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div class="col-md-4">
+  <h4>Trocar senha</h4>
+  <form method="post">
+    <div class="mb-2"><label class="form-label">Senha atual</label><input class="form-control" type="password" name="atual" required></div>
+    <div class="mb-3"><label class="form-label">Nova senha (mín. 8)</label><input class="form-control" type="password" name="nova" minlength="8" required></div>
+    <button class="btn btn-primary">Salvar</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>Configuração — {{ un.nome }}</h3>
+<form method="post" class="col-lg-6">
+  <div class="mb-2"><label class="form-label">Nome</label><input class="form-control" name="nome" value="{{ un.nome }}" required></div>
+  <div class="mb-2"><label class="form-label">Endereço</label><input class="form-control" name="endereco" value="{{ un.endereco or '' }}"></div>
+  <div class="mb-2"><label class="form-label">Fuso</label><input class="form-control" name="fuso" value="{{ un.fuso }}"></div>
+  <div class="mb-2"><label class="form-label">Responsável fica em espera por (minutos)</label><input class="form-control" type="number" name="espera_responsavel_min" value="{{ un.config.get('espera_responsavel_min', 15) }}"></div>
+  <div class="mb-3"><label class="form-label">Quando o responsável se identifica no leitor de fora (modo Pro)</label>
+    <select class="form-select" name="responsavel_resposta">
+      {% for k, v in [('aguardar','Registrar chegada, catraca não gira (padrão)'),('liberar','Registrar chegada e liberar a entrada'),('negar','Registrar chegada e mostrar "negado"')] %}<option value="{{ k }}" {{ 'selected' if un.config.get('responsavel_resposta','aguardar') == k }}>{{ v }}</option>{% endfor %}
+    </select>
+    <small class="text-muted">Validar na catraca real qual opção dá a melhor experiência (ver integrations/controlid/README.md).</small>
+  </div>
+  <button class="btn btn-primary">Salvar</button>
+</form>
+{% endblock %}

@@ -60,6 +60,27 @@ class EstadoCatraca:
         self.lock = threading.RLock()
         self.monitor_falhas = []  # erros ao avisar o servidor (pra depuração)
 
+    def reset(self):
+        """Volta ao estado de fábrica (testes). Mantém device_id/serial/login."""
+        with self.lock:
+            self.sessoes.clear()
+            for o in OBJETOS:
+                self.tabelas[o] = []
+                self.proximo_id[o] = 1
+            self.tabelas["portals"] = [dict(p) for p in PORTAIS_PADRAO]
+            self.proximo_id["portals"] = 3
+            self.imagens.clear()
+            self.config = {
+                "general": {"online": "0", "local_identification": "1", "ihm_enterprise_mode": "0"},
+                "online_client": {"server_id": "", "extract_template": "0", "max_request_attempts": "3"},
+                "monitor": {},
+                "sec_box": {"catra_role": "1", "catra_side_to_enter": "0", "catra_timeout": "1000"},
+            }
+            self.relogio_offset = 0
+            self.liberacoes.clear()
+            self.modo_contingencia = False
+            self.monitor_falhas.clear()
+
     # ---- helpers
     def agora(self):
         return int(time.time()) + self.relogio_offset

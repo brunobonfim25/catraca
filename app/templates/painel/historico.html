@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>Histórico — {{ p.nome }}</h3>
+<form class="row g-2 mb-3 no-print" method="get">
+  <div class="col-auto"><input class="form-control" type="date" name="de" value="{{ de }}"></div>
+  <div class="col-auto"><input class="form-control" type="date" name="ate" value="{{ ate }}"></div>
+  <div class="col-auto"><button class="btn btn-primary">Filtrar</button> <a class="btn btn-outline-secondary" href="{{ url_for('pessoas.detalhe', pessoa_id=p.id) }}">Cadastro</a></div>
+</form>
+<table class="table table-sm bg-white"><thead><tr><th>Quando</th><th>Evento</th><th>Sentido</th><th>Detalhe</th><th>Catraca</th></tr></thead><tbody>
+{% for l in linhas %}<tr><td>{{ l.ocorrido_em|data_hora(fuso) }}</td><td>{{ rotulos.get(l.tipo, l.tipo) }}</td><td>{{ l.sentido or '' }}</td><td><small>{% if l.correlacao_nome %}com {{ l.correlacao_nome }}{% endif %} {{ l.justificativa or '' }} {{ l.detalhes.get('motivo') or l.detalhes.get('alerta') or '' }}{% if l.autorizado_nome %} — por {{ l.autorizado_nome }}{% endif %}</small></td><td>{{ l.dispositivo_nome or '' }}</td></tr>{% else %}<tr><td colspan="5" class="text-muted">nada no período</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

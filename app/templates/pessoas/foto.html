@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>Foto — {{ p.nome }}</h3>
+{% if not consentimento %}<div class="alert alert-warning">Sem consentimento LGPD registrado. A foto é dado biométrico: confirme que o termo foi assinado antes de prosseguir.</div>{% endif %}
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="position-relative d-inline-block">
+      <video id="camera" autoplay playsinline muted></video>
+      <div id="guia"></div>
+    </div>
+    <canvas id="tela" class="d-none"></canvas>
+    <div class="mt-2 d-flex gap-2">
+      <button class="btn btn-primary" id="capturar" disabled>Capturar</button>
+      <button class="btn btn-outline-secondary" id="repetir" disabled>Repetir</button>
+      <button class="btn btn-success" id="salvar" disabled>Salvar e enviar às catracas</button>
+    </div>
+    <div id="msg" class="mt-2 small text-muted">Iniciando a câmera…</div>
+  </div>
+  <div class="col-lg-4">
+    <img id="previa" class="img-fluid rounded border" alt="" style="display:none">
+    <div class="card mt-2"><div class="card-body small">
+      <b>Como tirar</b> (recomendações da Control iD):
+      <ul class="mb-0"><li>Rosto de frente, dentro da elipse, olhando pra câmera</li><li>Fundo neutro, luz na frente (não atrás)</li><li>Sem boné, óculos escuros ou máscara</li><li>Expressão neutra, boca fechada</li><li>A catraca recusa foto sem rosto, desfocada ou com rosto já cadastrado</li></ul>
+    </div></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/webcam.js') }}"></script>
+<script>iniciarWebcam("{{ url_for('pessoas.foto_salvar', pessoa_id=p.id) }}");</script>
+{% endblock %}

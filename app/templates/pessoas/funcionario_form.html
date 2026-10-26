@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>{{ 'Editar funcionário' if p else 'Novo funcionário' }}</h3>
+<form method="post" class="col-lg-6">
+  <div class="mb-2"><label class="form-label">Nome completo</label><input class="form-control" name="nome" value="{{ p.nome if p else '' }}" required autofocus></div>
+  <div class="row g-2">
+    <div class="col-md-6 mb-2"><label class="form-label">Cargo</label><input class="form-control" name="cargo" value="{{ p.cargo or '' if p else '' }}"></div>
+    <div class="col-md-6 mb-2"><label class="form-label">Documento</label><input class="form-control" name="documento" value="{{ p.documento or '' if p else '' }}"></div>
+  </div>
+  {% set esc = p.escala if p else {} %}
+  <div class="p-2 border rounded bg-white mb-3"><label class="form-label">Escala (vazio = sem restrição)</label>
+    <div>{% for n, r in dias %}<label class="me-2"><input type="checkbox" name="dias" value="{{ n }}" {{ 'checked' if n in (esc.get('dias') or []) }}> {{ r }}</label>{% endfor %}</div>
+    <div class="row g-2 mt-1"><div class="col-6"><input class="form-control" type="time" name="inicio" value="{{ esc.get('inicio','') }}"></div><div class="col-6"><input class="form-control" type="time" name="fim" value="{{ esc.get('fim','') }}"></div></div>
+  </div>
+  {% if not p %}<div class="mb-3"><label class="form-label">Consentimento LGPD assinado por</label><input class="form-control" name="consentimento_por"></div>{% endif %}
+  <button class="btn btn-primary">{{ 'Salvar' if p else 'Cadastrar e tirar foto' }}</button>
+</form>
+{% endblock %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>Turmas</h3>
+<div class="row g-3">
+  <div class="col-lg-8">
+    <table class="table table-sm bg-white"><thead><tr><th>Turma</th><th>Turno</th><th>Alunos</th><th>Entrada</th><th>Tolerância</th><th>Saída</th><th>Saída com responsável</th>{% if tem_permissao('gerir_turmas') %}<th></th>{% endif %}</tr></thead><tbody>
+    {% for t in turmas %}
+      <tr class="{{ 'text-muted' if not t.ativo }}">
+        <td>{{ t.nome }}</td><td>{{ t.turno }}</td><td>{{ t.alunos }}</td><td>{{ t.entrada_inicio.strftime('%H:%M') }}–{{ t.entrada_fim.strftime('%H:%M') }}</td><td>{{ t.tolerancia_entrada_min }} min</td><td>{{ t.saida_inicio.strftime('%H:%M') }}–{{ t.saida_fim.strftime('%H:%M') }}</td><td>{{ 'sim' if t.exige_responsavel_saida else 'não (autônoma)' }}</td>
+        {% if tem_permissao('gerir_turmas') %}<td><button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#edit-{{ t.id }}">editar</button></td>{% endif %}
+      </tr>
+      {% if tem_permissao('gerir_turmas') %}
+      <tr class="collapse" id="edit-{{ t.id }}"><td colspan="8">
+        <form method="post" action="{{ url_for('painel.turma_salvar', turma_id=t.id) }}" class="row g-2">
+          {% with v=t %}{% include "painel/_turma_campos.html" %}{% endwith %}
+          <div class="col-auto"><button class="btn btn-primary btn-sm">Salvar</button></div>
+        </form>
+      </td></tr>
+      {% endif %}
+    {% endfor %}
+    </tbody></table>
+  </div>
+  {% if tem_permissao('gerir_turmas') %}
+  <div class="col-lg-4"><div class="card"><div class="card-body"><h6>Nova turma</h6>
+    <form method="post" action="{{ url_for('painel.turma_salvar') }}" class="row g-2">
+      {% with v=None %}{% include "painel/_turma_campos.html" %}{% endwith %}
+      <div class="col-12"><button class="btn btn-primary">Criar</button></div>
+    </form>
+  </div></div></div>
+  {% endif %}
+</div>
+{% endblock %}

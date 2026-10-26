@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>{{ 'Editar catraca' if d else 'Nova catraca' }}</h3>
+{% set cfg = d.config if d else {} %}
+<form method="post" class="col-lg-6">
+  <div class="row g-2">
+    <div class="col-md-8"><label class="form-label">Nome</label><input class="form-control" name="nome" value="{{ d.nome if d else 'Catraca principal' }}" required></div>
+    <div class="col-md-4"><label class="form-label">Modelo</label><input class="form-control" name="modelo" value="{{ d.modelo if d else 'idBlock Next + iDFace' }}"></div>
+    <div class="col-md-8"><label class="form-label">IP do iDFace primário (rede da escola)</label><input class="form-control" name="ip" value="{{ d.ip if d else '' }}" placeholder="192.168.0.50" required></div>
+    <div class="col-md-4"><label class="form-label">Porta</label><input class="form-control" type="number" name="porta" value="{{ d.porta if d else 80 }}"></div>
+    <div class="col-md-6"><label class="form-label">Usuário da API</label><input class="form-control" name="usuario_api" value="{{ d.usuario_api if d else 'admin' }}"></div>
+    <div class="col-md-6"><label class="form-label">Senha da API {{ '(em branco = manter)' if d }}</label><input class="form-control" type="password" name="senha_api" autocomplete="new-password"></div>
+    <div class="col-md-4"><label class="form-label">Função</label><select class="form-select" name="funcao">{% for k in ['catraca','leitora'] %}<option value="{{ k }}" {{ 'selected' if d and d.funcao == k }}>{{ k }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Sentido</label><select class="form-select" name="sentido">{% for k in ['bidirecional','entrada','saida'] %}<option value="{{ k }}" {{ 'selected' if d and d.sentido == k }}>{{ k }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Modo (registro)</label><select class="form-select" name="modo">{% for k in ['standalone','pro'] %}<option value="{{ k }}" {{ 'selected' if d and d.modo == k }}>{{ k }}</option>{% endfor %}</select></div>
+    <div class="col-md-6"><label class="form-label">Giro de entrada (<code>allow=</code>)</label><select class="form-select" name="allow_entrada">{% for k in ['clockwise','anticlockwise'] %}<option value="{{ k }}" {{ 'selected' if cfg.get('allow_entrada','clockwise') == k }}>{{ k }}</option>{% endfor %}</select></div>
+    <div class="col-md-6"><label class="form-label">Giro de saída</label><select class="form-select" name="allow_saida">{% for k in ['anticlockwise','clockwise'] %}<option value="{{ k }}" {{ 'selected' if cfg.get('allow_saida','anticlockwise') == k }}>{{ k }}</option>{% endfor %}</select></div>
+    <div class="col-12 form-check ms-3 mt-3"><input class="form-check-input" type="checkbox" name="ativo" value="1" id="ativo" {{ 'checked' if not d or d.ativo }}><label class="form-check-label" for="ativo">ativa</label></div>
+  </div>
+  <button class="btn btn-primary mt-3">Salvar</button>
+  <small class="d-block text-muted mt-2">Qual giro é entrada depende de <code>sec_box.catra_side_to_enter</code> na catraca — validar com um giro real.</small>
+</form>
+{% endblock %}

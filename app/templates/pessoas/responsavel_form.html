@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>{{ 'Editar responsável' if p else 'Novo responsável' }}</h3>
+<form method="post" class="col-lg-6">
+  <div class="mb-2"><label class="form-label">Nome completo</label><input class="form-control" name="nome" value="{{ p.nome if p else '' }}" required autofocus></div>
+  <div class="row g-2">
+    <div class="col-md-6 mb-2"><label class="form-label">Telefone</label><input class="form-control" name="telefone" value="{{ p.telefone or '' if p else '' }}" placeholder="(21) 9…"></div>
+    <div class="col-md-6 mb-2"><label class="form-label">Documento</label><input class="form-control" name="documento" value="{{ p.documento or '' if p else '' }}"></div>
+  </div>
+  {% if aluno_id %}
+  <input type="hidden" name="aluno_id" value="{{ aluno_id }}">
+  <div class="p-2 border rounded bg-white mb-3">
+    <div class="row g-2">
+      <div class="col-md-4"><label class="form-label">Parentesco</label><input class="form-control" name="parentesco" placeholder="mãe, pai, avó…"></div>
+      <div class="col-md-8"><label class="form-label">Pode retirar</label>
+        <select class="form-select" name="regra" onchange="document.getElementById('dias').style.display = this.value === 'dias' ? '' : 'none'">
+          <option value="sempre">Sempre</option><option value="dias">Só em dias específicos</option><option value="aviso">Só com aviso prévio da secretaria</option>
+        </select></div>
+    </div>
+    <div id="dias" class="mt-2" style="display:none">{% for n, r in dias %}<label class="me-2"><input type="checkbox" name="dias" value="{{ n }}"> {{ r }}</label>{% endfor %}</div>
+  </div>
+  {% endif %}
+  {% if not p %}<div class="mb-3"><label class="form-label">Consentimento LGPD assinado por</label><input class="form-control" name="consentimento_por" placeholder="normalmente o próprio responsável"></div>{% endif %}
+  <button class="btn btn-primary">{{ 'Salvar' if p else 'Cadastrar e tirar foto' }}</button>
+</form>
+{% endblock %}

@@ -31,9 +31,13 @@ PERMISSOES = {
 
 def carregar_usuario():
     """Preenche g.usuario e g.unidade a partir da sessão. Retorna None se deslogado."""
-    if getattr(g, "usuario", None) is not None:
-        return g.usuario
     uid = session.get("usuario_id")
+    # Cache por requisição, mas só se ainda é o mesmo login: com app_context compartilhado
+    # (testes, CLI) o g sobrevive entre requisições e deixaria um logout "logado".
+    cache = getattr(g, "usuario", None)
+    if cache is not None and cache["id"] == uid and session.get("unidade_id") == getattr(g, "unidade_id_cache", None):
+        return cache
+    g.unidade_id_cache = session.get("unidade_id")
     if not uid:
         g.usuario = None
         g.unidade = None

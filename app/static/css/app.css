@@ -1,0 +1,9 @@
+.status-online { color: #198754; }
+.status-offline { color: #dc3545; }
+.status-desconhecido { color: #6c757d; }
+.evento-negado { background: #fff3f3; }
+.evento-manual { background: #fff8e1; }
+#camera { width: 100%; max-width: 480px; background: #000; border-radius: 8px; }
+#guia { position: absolute; top: 8%; left: 25%; width: 50%; height: 84%; border: 3px dashed rgba(255,255,255,.7); border-radius: 50%; pointer-events: none; }
+.foto-mini { width: 48px; height: 48px; object-fit: cover; border-radius: 50%; }
+@media print { nav, .no-print { display: none !important; } body { background: #fff; } }

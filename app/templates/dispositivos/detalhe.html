@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>{{ d.nome }} <small class="status-{{ d.status }} fs-6">● {{ d.status }}</small></h3>
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card"><div class="card-body">
+      <dl class="row mb-0 small">
+        <dt class="col-5">IP</dt><dd class="col-7">{{ d.ip }}:{{ d.porta }}</dd>
+        <dt class="col-5">Serial / firmware</dt><dd class="col-7">{{ d.serial or '—' }} / {{ d.firmware or '—' }}</dd>
+        <dt class="col-5">device_id (Control iD)</dt><dd class="col-7">{{ d.device_id_fabricante or '— (clique em Testar conexão)' }}</dd>
+        <dt class="col-5">Modo</dt><dd class="col-7">{{ d.modo }}</dd>
+        <dt class="col-5">Último contato</dt><dd class="col-7">{{ d.ultimo_contato|data_hora(fuso) if d.ultimo_contato else '—' }}</dd>
+        <dt class="col-5">Último log coletado</dt><dd class="col-7">{{ d.ultimo_log_id }} {% if d.config.get('logs_no_dispositivo') %}<small class="text-muted">({{ d.config.logs_no_dispositivo }} na catraca)</small>{% endif %}</dd>
+      </dl>
+      {% if tem_permissao('gerir_dispositivos') %}
+      <div class="d-flex flex-wrap gap-1 mt-2">
+        <form method="post" action="{{ url_for('dispositivos.testar', dispositivo_id=d.id) }}"><button class="btn btn-sm btn-primary">Testar conexão</button></form>
+        <form method="post" action="{{ url_for('dispositivos.configurar_monitor', dispositivo_id=d.id) }}"><button class="btn btn-sm btn-outline-primary">Configurar Monitor</button></form>
+        <form method="post" action="{{ url_for('dispositivos.modo', dispositivo_id=d.id) }}"><input type="hidden" name="modo" value="{{ 'standalone' if d.modo == 'pro' else 'pro' }}"><button class="btn btn-sm btn-outline-warning">Mudar para {{ 'Standalone' if d.modo == 'pro' else 'Pro (online)' }}</button></form>
+        <form method="post" action="{{ url_for('dispositivos.acertar_hora', dispositivo_id=d.id) }}"><button class="btn btn-sm btn-outline-secondary">Acertar hora</button></form>
+        <form method="post" action="{{ url_for('dispositivos.sincronizar_todos', dispositivo_id=d.id) }}"><button class="btn btn-sm btn-outline-secondary">Reenviar todo mundo</button></form>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dispositivos.editar', dispositivo_id=d.id) }}">Editar</a>
+      </div>
+      <div class="small text-muted mt-2">Monitor → <code>{{ url_monitor }}/…</code><br>Servidor online (Pro) → <code>{{ url_online }}</code></div>
+      {% endif %}
+    </div></div>
+
+    <div class="card mt-3"><div class="card-header">Leitores (qual lado é entrada/saída) <small class="text-muted">— validar no hardware</small></div><div class="card-body">
+      <form method="post" action="{{ url_for('dispositivos.leitores', dispositivo_id=d.id) }}">
+        <input type="hidden" name="n" value="4">
+        <table class="table table-sm mb-2"><thead><tr><th>component_id</th><th>portal_id</th><th>sentido</th><th>descrição</th></tr></thead><tbody>
+        {% for i in range(4) %}{% set l = leitores[i] if i < leitores|length else None %}
+          <tr><td><input class="form-control form-control-sm" name="component_{{ i }}" value="{{ l.component_id or '' if l else '' }}" placeholder="0MS1"></td>
+              <td><input class="form-control form-control-sm" name="portal_{{ i }}" value="{{ l.portal_id or '' if l else '' }}" placeholder="1"></td>
+              <td><select class="form-select form-select-sm" name="sentido_{{ i }}"><option value="">—</option>{% for s in ['entrada','saida'] %}<option value="{{ s }}" {{ 'selected' if l and l.sentido == s }}>{{ s }}</option>{% endfor %}</select></td>
+              <td><input class="form-control form-control-sm" name="descricao_{{ i }}" value="{{ l.descricao or '' if l else '' }}"></td></tr>
+        {% endfor %}
+        </tbody></table>
+        {% if tem_permissao('gerir_dispositivos') %}<button class="btn btn-sm btn-outline-primary">Salvar mapeamento</button>{% endif %}
+      </form>
+    </div></div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card"><div class="card-header">Fila de sincronização (erros primeiro)</div>
+      <table class="table table-sm mb-0"><thead><tr><th>#</th><th>Tipo</th><th>Pessoa</th><th>Status</th><th>Tent.</th><th>Erro</th><th></th></tr></thead><tbody>
+      {% for f in fila %}<tr class="{{ 'table-danger' if f.status == 'erro' }}"><td>{{ f.id }}</td><td>{{ f.tipo }}</td><td>{{ f.pessoa_nome or '' }}</td><td>{{ f.status }}</td><td>{{ f.tentativas }}</td><td><small>{{ f.erro or '' }}</small></td>
+        <td>{% if f.status == 'erro' and tem_permissao('gerir_dispositivos') %}<form method="post" action="{{ url_for('dispositivos.reenviar', dispositivo_id=d.id, item_id=f.id) }}"><button class="btn btn-sm btn-outline-secondary">reenviar</button></form>{% endif %}</td></tr>
+      {% else %}<tr><td colspan="7" class="text-muted">fila vazia</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+    <div class="card mt-3"><div class="card-header">Pessoas nesta catraca</div>
+      <table class="table table-sm mb-0"><thead><tr><th>Pessoa</th><th>user_id</th><th>Foto</th><th>Regras</th><th>Erro</th></tr></thead><tbody>
+      {% for p in pessoas %}<tr><td><a href="{{ url_for('pessoas.detalhe', pessoa_id=p.pessoa_id) }}">{{ p.nome }}</a> <small class="text-muted">{{ p.tipo }}</small></td><td>{{ p.user_id_no_dispositivo or '—' }}</td>
+        <td class="text-{{ {'sincronizado':'success','pendente':'warning','erro':'danger','nao_aplicavel':'muted'}[p.foto_sync_status] }}">{{ p.foto_sync_status }}</td><td>{{ p.regras_sync_status }}</td><td><small>{{ p.erro or '' }}</small></td></tr>
+      {% else %}<tr><td colspan="5" class="text-muted">ninguém ainda</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+</div>
+{% endblock %}

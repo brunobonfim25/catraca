@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>{{ 'Editar aluno' if p else 'Novo aluno' }}</h3>
+<form method="post" class="col-lg-6">
+  <div class="mb-2"><label class="form-label">Nome completo</label><input class="form-control" name="nome" value="{{ p.nome if p else '' }}" required autofocus></div>
+  <div class="row g-2">
+    <div class="col-md-6 mb-2"><label class="form-label">Turma</label><select class="form-select" name="turma_id" required>{% for t in turmas %}<option value="{{ t.id }}" {{ 'selected' if p and p.turma_id == t.id }}>{{ t.nome }} ({{ t.turno }})</option>{% endfor %}</select></div>
+    <div class="col-md-6 mb-2"><label class="form-label">Matrícula</label><input class="form-control" name="matricula" value="{{ p.matricula or '' if p else '' }}"></div>
+  </div>
+  <div class="mb-2"><label class="form-label">Documento (opcional)</label><input class="form-control" name="documento" value="{{ p.documento or '' if p else '' }}"></div>
+  <div class="mb-3"><label class="form-label">Saída sozinho(a)</label>
+    <select class="form-select" name="saida_autonoma">
+      <option value="turma" {{ 'selected' if not p or p.saida_autonoma is none }}>Segue a regra da turma</option>
+      <option value="sim" {{ 'selected' if p and p.saida_autonoma == true }}>Sim — pais autorizaram saída autônoma</option>
+      <option value="nao" {{ 'selected' if p and p.saida_autonoma == false }}>Não — só com responsável</option>
+    </select>
+  </div>
+  {% if not p %}
+  <div class="mb-3 p-2 border rounded bg-white"><label class="form-label mb-1">Consentimento LGPD (foto é dado biométrico)</label>
+    <input class="form-control" name="consentimento_por" placeholder="Nome do responsável que assinou o termo"><small class="text-muted">Pode anexar o termo depois, na ficha do aluno.</small></div>
+  {% endif %}
+  <button class="btn btn-primary">{{ 'Salvar' if p else 'Cadastrar e tirar foto' }}</button>
+  {% if not turmas %}<div class="alert alert-warning mt-3">Cadastre uma turma primeiro em <a href="{{ url_for('painel.turmas') }}">Turmas</a>.</div>{% endif %}
+</form>
+{% endblock %}

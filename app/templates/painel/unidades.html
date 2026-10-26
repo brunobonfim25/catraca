@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>Unidades</h3>
+<div class="row g-3">
+  <div class="col-lg-7">
+    <table class="table bg-white"><thead><tr><th>Empresa</th><th>Unidade</th><th>Endereço</th><th></th></tr></thead><tbody>
+    {% for un in unidades %}<tr><td>{{ un.empresa }}</td><td>{{ un.nome }}</td><td><small>{{ un.endereco or '' }}</small></td><td><a class="btn btn-sm btn-primary" href="{{ url_for('auth.trocar_unidade', unidade_id=un.id) }}">Abrir</a> {% if tem_permissao('gerir_turmas') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('auth.trocar_unidade', unidade_id=un.id) }}?proximo=config">Config</a>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="4" class="text-muted">Nenhuma unidade ainda.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+  {% if tem_permissao('gerir_turmas') %}
+  <div class="col-lg-5">
+    {% if usuario.perfil == 'superadmin' %}
+    <div class="card mb-3"><div class="card-body"><h6>Nova empresa (rede de escolas)</h6>
+      <form method="post" action="{{ url_for('painel.empresa_nova') }}" class="d-flex gap-2"><input class="form-control" name="nome" placeholder="ex. Grupo Educacional Professor Pica Pau" required><button class="btn btn-outline-primary">Criar</button></form>
+    </div></div>
+    {% endif %}
+    <div class="card"><div class="card-body"><h6>Nova unidade</h6>
+      <form method="post" action="{{ url_for('painel.unidade_nova') }}">
+        {% if usuario.perfil == 'superadmin' %}<select class="form-select mb-2" name="empresa_id" required>{% for e in empresas %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}</select>{% endif %}
+        <input class="form-control mb-2" name="nome" placeholder="ex. Recreio" required>
+        <input class="form-control mb-2" name="endereco" placeholder="Endereço">
+        <input class="form-control mb-2" name="fuso" value="America/Sao_Paulo">
+        <button class="btn btn-primary">Criar e abrir</button>
+      </form>
+    </div></div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

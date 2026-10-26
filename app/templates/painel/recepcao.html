@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h3>Recepção</h3>
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card"><div class="card-header">Responsáveis esperando</div>
+      <ul class="list-group list-group-flush" id="esperas"><li class="list-group-item text-muted">carregando…</li></ul>
+    </div>
+    <div class="card mt-3"><div class="card-header">Alertas recentes (negados)</div>
+      <ul class="list-group list-group-flush" id="negados"></ul>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card"><div class="card-header">Liberação manual</div><div class="card-body">
+      <form class="row g-2 mb-3" method="get">
+        <div class="col-8"><input class="form-control" name="q" value="{{ termo }}" placeholder="buscar aluno, funcionário ou visitante pelo nome"></div>
+        <div class="col-4 d-flex gap-2"><button class="btn btn-outline-primary">Buscar</button><a class="btn btn-outline-secondary" href="{{ url_for('pessoas.visitante_novo') }}">+ Visitante</a></div>
+      </form>
+      {% if resultados %}
+      <table class="table table-sm"><tbody>
+        {% for r in resultados %}<tr><td>{{ r.nome }}</td><td><small>{{ r.tipo }} {{ r.turma_nome or '' }}</small></td><td>{{ 'dentro' if r.dentro else 'fora' }}</td><td><a class="btn btn-sm btn-primary" href="{{ url_for('painel.recepcao', pessoa_id=r.id) }}">Selecionar</a></td></tr>{% endfor %}
+      </tbody></table>
+      {% endif %}
+      <form method="post" action="{{ url_for('painel.liberar') }}" class="border-top pt-3">
+        {% if pessoa %}
+          <input type="hidden" name="pessoa_id" value="{{ pessoa.id }}">
+          <p class="mb-2"><b>{{ pessoa.nome }}</b> <small class="text-muted">{{ pessoa.tipo }} {{ pessoa.turma_nome or '' }}</small></p>
+        {% else %}
+          <p class="text-muted mb-2">Selecione uma pessoa acima, ou libere sem cadastro (visitante avulso):</p>
+          <input class="form-control mb-2" name="visitante" placeholder="Nome do visitante (se sem cadastro)">
+        {% endif %}
+        <div class="row g-2">
+          <div class="col-md-3"><select class="form-select" name="sentido"><option value="saida">Saída</option><option value="entrada">Entrada</option></select></div>
+          <div class="col-md-4"><select class="form-select" name="dispositivo_id"><option value="">(sem catraca — só registrar)</option>{% for d in dispositivos %}<option value="{{ d.id }}">{{ d.nome }}</option>{% endfor %}</select></div>
+          <div class="col-md-5"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="girar" value="1" id="girar" checked><label class="form-check-label" for="girar">liberar a catraca agora</label></div></div>
+        </div>
+        <input class="form-control my-2" name="justificativa" placeholder="Justificativa (obrigatória): ex. consulta médica, mãe ligou às 14h" required minlength="5">
+        <button class="btn btn-warning">Registrar liberação</button>
+        <small class="text-muted d-block mt-1">Fica no log com seu nome; os responsáveis do aluno recebem aviso no Telegram.</small>
+      </form>
+    </div></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function atualizar() {
+  const r = await fetch("{{ url_for('api.painel_estado') }}", {credentials: 'same-origin'}); if (!r.ok) return;
+  const d = await r.json();
+  document.getElementById('esperas').innerHTML = d.esperas.length ? d.esperas.map(e => `<li class="list-group-item"><b>${esc(e.responsavel)}</b> chegou para buscar <b>${esc(e.alunos || '—')}</b><br><small>${e.identificado_em} · vale até ${e.expira_em}</small>
+    <form method="post" action="/painel/espera/${e.id}/encerrar" class="d-inline float-end"><button class="btn btn-sm btn-outline-secondary">encerrar</button></form></li>`).join('') : '<li class="list-group-item text-muted">ninguém esperando</li>';
+  document.getElementById('negados').innerHTML = d.ultimos.filter(e => e.negado).slice(0, 8).map(e => `<li class="list-group-item evento-negado"><b>${e.hora}</b> ${esc(e.pessoa || 'não identificado')} — ${esc(e.rotulo)}<br><small>${esc(e.detalhes && e.detalhes.motivo || '')}</small></li>`).join('') || '<li class="list-group-item text-muted">nenhum</li>';
+}
+atualizar(); setInterval(atualizar, 5000);
+</script>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h3 class="mb-0">{{ unidade.nome }}</h3>
+  <small class="text-muted">atualiza a cada 5 s · <span id="relogio"></span></small>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-2"><div class="card text-center"><div class="card-body py-2"><div class="fs-3" id="total-dentro">–</div><small>dentro agora</small></div></div></div>
+  <div class="col-6 col-md-2"><div class="card text-center"><div class="card-body py-2"><div class="fs-3">{{ hoje.entradas }}</div><small>entradas hoje</small></div></div></div>
+  <div class="col-6 col-md-2"><div class="card text-center"><div class="card-body py-2"><div class="fs-3 text-warning">{{ hoje.atrasos }}</div><small>atrasos hoje</small></div></div></div>
+  <div class="col-6 col-md-2"><div class="card text-center"><div class="card-body py-2"><div class="fs-3 text-danger">{{ hoje.negados }}</div><small>negados hoje</small></div></div></div>
+  <div class="col-6 col-md-2"><div class="card text-center"><div class="card-body py-2"><div class="fs-3">{{ hoje.antecipadas }}</div><small>saídas antecipadas</small></div></div></div>
+  <div class="col-6 col-md-2"><div class="card text-center"><div class="card-body py-2"><div class="fs-6 mt-1" id="catracas">{% for d in dispositivos %}<span class="status-{{ d.status }}">● {{ d.nome }}</span><br>{% else %}<a href="{{ url_for('dispositivos.novo') }}">cadastrar catraca</a>{% endfor %}</div></div></div></div>
+</div>
+<div class="row g-3">
+  <div class="col-lg-3">
+    <div class="card"><div class="card-header">Por turma (dentro / total)</div>
+      <ul class="list-group list-group-flush" id="turmas">
+        {% for t in turmas %}<li class="list-group-item d-flex justify-content-between"><a href="{{ url_for('painel.presenca', turma_id=t.id) }}">{{ t.nome }}</a><span><b data-turma="{{ t.nome }}">{{ t.dentro }}</b> / {{ t.alunos }}</span></li>{% endfor %}
+      </ul>
+    </div>
+    <div class="card mt-3"><div class="card-header">Responsáveis esperando</div>
+      <ul class="list-group list-group-flush" id="esperas"><li class="list-group-item text-muted">—</li></ul>
+    </div>
+  </div>
+  <div class="col-lg-9">
+    <div class="card"><div class="card-header">Últimos acessos</div>
+      <table class="table table-sm mb-0"><thead><tr><th>Hora</th><th>Pessoa</th><th>Turma</th><th>Evento</th><th>Detalhe</th><th>Catraca</th></tr></thead>
+      <tbody id="ultimos"></tbody></table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function atualizar() {
+  try {
+    const r = await fetch("{{ url_for('api.painel_estado') }}", {credentials: 'same-origin'});
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('total-dentro').textContent = d.total_dentro;
+    document.querySelectorAll('[data-turma]').forEach(el => { const t = d.presentes.find(p => p.turma === el.dataset.turma); el.textContent = t ? t.n : 0; });
+    document.getElementById('esperas').innerHTML = d.esperas.length ? d.esperas.map(e => `<li class="list-group-item"><b>${esc(e.responsavel)}</b><br><small>para ${esc(e.alunos || '—')} · chegou ${e.identificado_em}, vale até ${e.expira_em}</small></li>`).join('') : '<li class="list-group-item text-muted">ninguém esperando</li>';
+    document.getElementById('ultimos').innerHTML = d.ultimos.map(e => `<tr class="${e.negado ? 'evento-negado' : ''} ${e.detalhes && e.detalhes.manual ? 'evento-manual' : ''}"><td>${e.hora}</td><td>${esc(e.pessoa || '—')}</td><td>${esc(e.turma || '')}</td><td>${esc(e.rotulo)}</td><td><small>${esc(e.correlacao ? 'com ' + e.correlacao : (e.justificativa || (e.detalhes && (e.detalhes.alerta || e.detalhes.motivo)) || ''))}</small></td><td>${esc(e.dispositivo || '')}</td></tr>`).join('');
+    document.getElementById('catracas').innerHTML = d.dispositivos.map(x => `<span class="status-${x.status}">● ${esc(x.nome)}</span> <small class="text-muted">${x.ultimo_contato || ''}</small><br>`).join('');
+    document.getElementById('relogio').textContent = new Date().toLocaleTimeString('pt-BR');
+  } catch (e) { console.error(e); }
+}
+atualizar(); setInterval(atualizar, 5000);
+</script>
+{% endblock %}

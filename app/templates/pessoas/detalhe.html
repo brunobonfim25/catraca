@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card"><div class="card-body text-center">
+      {% if p.tem_foto %}<img src="{{ url_for('pessoas.foto_jpg', pessoa_id=p.id) }}" class="img-fluid rounded mb-2" style="max-height:220px">{% else %}<div class="text-muted py-4">sem foto</div>{% endif %}
+      <h4>{{ p.nome }}</h4>
+      <p class="mb-1">{{ p.tipo }} {% if p.turma_nome %}· {{ p.turma_nome }}{% endif %} {% if p.cargo %}· {{ p.cargo }}{% endif %}</p>
+      <span class="badge bg-{{ {'ativo':'success','bloqueado':'warning','desligado':'secondary'}[p.status] }}">{{ p.status }}</span>
+      {% if presenca %}<span class="badge bg-{{ 'primary' if presenca.dentro else 'light text-dark' }}">{{ 'dentro desde ' + presenca.desde|hora(fuso) if presenca.dentro else 'fora' }}</span>{% endif %}
+      {% if not consentimento and p.tipo != 'visitante' %}<div class="alert alert-warning py-1 mt-2 small">Sem consentimento LGPD registrado.</div>{% endif %}
+      <div class="mt-3 d-flex flex-wrap gap-1 justify-content-center">
+        {% if tem_permissao('cadastrar_pessoas') and p.tipo != 'visitante' %}<a class="btn btn-sm btn-primary" href="{{ url_for('pessoas.foto', pessoa_id=p.id) }}">{{ 'Refazer foto' if p.tem_foto else 'Tirar foto' }}</a>{% endif %}
+        {% if tem_permissao('cadastrar_pessoas') %}
+          {% if p.tipo == 'aluno' %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pessoas.aluno_editar', pessoa_id=p.id) }}">Editar</a>{% elif p.tipo == 'responsavel' %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pessoas.responsavel_editar', pessoa_id=p.id) }}">Editar</a>{% elif p.tipo == 'funcionario' %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pessoas.funcionario_editar', pessoa_id=p.id) }}">Editar</a>{% endif %}
+          {% if p.status != 'desligado' %}<form method="post" action="{{ url_for('pessoas.bloquear', pessoa_id=p.id) }}" class="d-inline"><button class="btn btn-sm btn-outline-warning">{{ 'Desbloquear' if p.status == 'bloqueado' else 'Bloquear' }}</button></form>{% endif %}
+        {% endif %}
+        {% if p.responsavel_id and tem_permissao('cadastrar_pessoas') %}<a class="btn btn-sm btn-outline-info" href="{{ url_for('notificacoes.ativar', responsavel_id=p.responsavel_id) }}">{{ 'Telegram ✔' if p.telegram_chat_id else 'Ativar Telegram' }}</a>{% endif %}
+        {% if tem_permissao('ver_relatorios') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('painel.historico', pessoa_id=p.id) }}">Histórico</a>{% endif %}
+      </div>
+    </div></div>
+
+    <div class="card mt-3"><div class="card-header">Sincronização com as catracas</div>
+      <ul class="list-group list-group-flush">
+      {% for s in sync %}<li class="list-group-item d-flex justify-content-between"><span>{{ s.dispositivo_nome }} <small class="status-{{ s.dispositivo_status }}">●</small></span>
+        <span>foto: <b class="text-{{ {'sincronizado':'success','pendente':'warning','erro':'danger','nao_aplicavel':'muted'}[s.foto_sync_status] }}">{{ s.foto_sync_status }}</b> · regras: <b>{{ s.regras_sync_status }}</b>{% if s.erro %}<br><small class="text-danger">{{ s.erro }}</small>{% endif %}</span></li>
+      {% else %}<li class="list-group-item text-muted">{{ 'visitante não vai pra catraca' if p.tipo == 'visitante' else 'nenhuma catraca cadastrada' }}</li>{% endfor %}
+      </ul>
+    </div>
+
+    {% if tem_permissao('excluir_lgpd') %}
+    <div class="card mt-3 border-danger"><div class="card-header">LGPD</div><div class="card-body">
+      <form method="post" action="{{ url_for('pessoas.consentimento', pessoa_id=p.id) }}" enctype="multipart/form-data" class="mb-3">
+        <input class="form-control form-control-sm mb-1" name="assinado_por" placeholder="Termo assinado por" required>
+        <input class="form-control form-control-sm mb-1" type="date" name="assinado_em">
+        <input class="form-control form-control-sm mb-1" type="file" name="arquivo" accept=".pdf,.jpg,.png">
+        <button class="btn btn-sm btn-outline-primary">Registrar consentimento</button>
+      </form>
+      {% if p.status != 'desligado' %}<form method="post" action="{{ url_for('pessoas.desligar', pessoa_id=p.id) }}" onsubmit="return confirm('Desligar? Sai das catracas agora; foto é apagada em 30 dias.')" class="d-inline"><button class="btn btn-sm btn-outline-danger">Desligar</button></form>{% endif %}
+      {% if p.tem_foto %}<form method="post" action="{{ url_for('pessoas.apagar_foto', pessoa_id=p.id) }}" onsubmit="return confirm('Apagar a foto agora?')" class="d-inline"><button class="btn btn-sm btn-outline-danger">Apagar foto agora</button></form>{% endif %}
+    </div></div>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-8">
+    {% if p.aluno_id %}
+    <div class="card"><div class="card-header">Responsáveis autorizados ({{ responsaveis|length }}/5)</div>
+      <table class="table table-sm mb-0"><thead><tr><th>Nome</th><th>Parentesco</th><th>Regra</th><th>Telegram</th><th></th></tr></thead><tbody>
+      {% for r in responsaveis %}<tr><td><a href="{{ url_for('pessoas.detalhe', pessoa_id=r.pessoa_id) }}">{{ r.nome }}</a> {% if r.status != 'ativo' %}<span class="badge bg-warning">{{ r.status }}</span>{% endif %}</td><td>{{ r.parentesco or '' }}</td>
+        <td>{{ r.regra }}{% if r.regra == 'dias' %} ({{ r.dias_semana|join(',') }}){% endif %}</td><td>{{ '✔' if r.telegram_chat_id else '—' }}</td>
+        <td>{% if tem_permissao('cadastrar_pessoas') %}<form method="post" action="{{ url_for('pessoas.desvincular', pessoa_id=p.id, responsavel_id=r.responsavel_id) }}"><button class="btn btn-sm btn-outline-danger">remover</button></form>{% endif %}</td></tr>
+      {% else %}<tr><td colspan="5" class="text-danger">Nenhum responsável — o aluno não vai conseguir sair se a turma exige responsável.</td></tr>{% endfor %}
+      </tbody></table>
+      {% if tem_permissao('cadastrar_pessoas') %}
+      <div class="card-body border-top">
+        <form method="post" action="{{ url_for('pessoas.vincular', pessoa_id=p.id) }}" class="row g-2">
+          <div class="col-md-4"><select class="form-select form-select-sm" name="responsavel_id" required><option value="">vincular existente…</option>{% for c in candidatos %}<option value="{{ c.id }}">{{ c.nome }}</option>{% endfor %}</select></div>
+          <div class="col-md-2"><input class="form-control form-control-sm" name="parentesco" placeholder="parentesco"></div>
+          <div class="col-md-3"><select class="form-select form-select-sm" name="regra"><option value="sempre">sempre</option><option value="dias">dias específicos</option><option value="aviso">só com aviso</option></select></div>
+          <div class="col-md-3"><button class="btn btn-sm btn-primary">Vincular</button> <a class="btn btn-sm btn-outline-primary" href="{{ url_for('pessoas.responsavel_novo', aluno_id=p.aluno_id) }}">+ Novo</a></div>
+          <div class="col-12"><small>dias: {% for n, r in dias %}<label class="me-2"><input type="checkbox" name="dias" value="{{ n }}"> {{ r }}</label>{% endfor %}</small></div>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+    {% if tem_permissao('liberar_manual') %}
+    <div class="card mt-3"><div class="card-header">Aviso de retirada (regra "só com aviso" / exceção do dia)</div><div class="card-body">
+      <form method="post" action="{{ url_for('pessoas.aviso_retirada', pessoa_id=p.id) }}" class="row g-2">
+        <div class="col-md-4"><select class="form-select form-select-sm" name="responsavel_id" required>{% for r in responsaveis %}<option value="{{ r.responsavel_id }}">{{ r.nome }}</option>{% endfor %}</select></div>
+        <div class="col-md-3"><input class="form-control form-control-sm" type="date" name="data" required></div>
+        <div class="col-md-3"><input class="form-control form-control-sm" name="observacao" placeholder="quem avisou"></div>
+        <div class="col-md-2"><button class="btn btn-sm btn-outline-primary">Registrar</button></div>
+      </form>
+      {% for a in avisos %}<small class="d-block mt-1">{{ a.data.strftime('%d/%m') }} — {{ a.responsavel_nome }} {{ '(' + a.observacao + ')' if a.observacao }}</small>{% endfor %}
+    </div></div>
+    {% endif %}
+    {% endif %}
+
+    {% if p.responsavel_id %}
+    <div class="card"><div class="card-header">Alunos que pode retirar</div>
+      <ul class="list-group list-group-flush">{% for a in alunos %}<li class="list-group-item"><a href="{{ url_for('pessoas.detalhe', pessoa_id=a.pessoa_id) }}">{{ a.nome }}</a> ({{ a.turma_nome }}) — {{ a.parentesco or '' }} · {{ a.regra }}</li>{% else %}<li class="list-group-item text-muted">nenhum vínculo</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <div class="card mt-3"><div class="card-header">Últimos eventos</div>
+      <table class="table table-sm mb-0"><tbody>
+      {% for e in eventos %}<tr class="{{ 'evento-negado' if e.tipo in ['SAIDA_NEGADA','ACESSO_NEGADO'] }}"><td>{{ e.ocorrido_em|data_hora(fuso) }}</td><td>{{ rotulos.get(e.tipo, e.tipo) }}</td><td><small>{% if e.correlacao_nome %}com {{ e.correlacao_nome }}{% endif %} {{ e.justificativa or '' }} {{ e.detalhes.get('motivo') or e.detalhes.get('alerta') or '' }}{% if e.autorizado_nome %} — por {{ e.autorizado_nome }}{% endif %}</small></td></tr>
+      {% else %}<tr><td class="text-muted">nenhum evento</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+</div>
+{% endblock %}
