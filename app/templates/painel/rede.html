@@ -2,10 +2,9 @@
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-2">
   <h3 class="mb-0">Rede — todas as unidades</h3>
-  {% if modo == 'nuvem' %}<span class="badge bg-secondary">painel da nuvem · somente leitura</span>{% endif %}
 </div>
 <table class="table bg-white align-middle">
-  <thead><tr><th>Unidade</th><th>Dentro agora</th><th>Entradas hoje</th><th>Atrasos</th><th>Negados</th><th>Saídas antecipadas</th><th>Catracas</th><th>Último evento</th>{% if modo == 'nuvem' %}<th>Espelho</th>{% endif %}<th></th></tr></thead>
+  <thead><tr><th>Unidade</th><th>Dentro agora</th><th>Entradas hoje</th><th>Atrasos</th><th>Negados</th><th>Saídas antecipadas</th><th>Catracas</th><th>Último evento</th>{% if modo == 'nuvem' %}<th>Agente na escola</th>{% endif %}<th></th></tr></thead>
   <tbody>
   {% for l in linhas %}
     <tr>
@@ -17,7 +16,7 @@
       <td>{{ l.hoje.antecipadas if l.hoje else 0 }}</td>
       <td>{% for d in l.dispositivos %}<span class="status-{{ d.status }}">● {{ d.nome }}</span><br>{% else %}<small class="text-muted">nenhuma</small>{% endfor %}</td>
       <td>{{ l.hoje.ultimo|data_hora(l.unidade.fuso) if l.hoje and l.hoje.ultimo else '—' }}</td>
-      {% if modo == 'nuvem' %}<td>{% if l.espelho_erro %}<span class="text-danger">erro: {{ l.espelho_erro[:60] }}</span>{% elif l.espelho_em %}<small>{{ l.espelho_em[:16]|replace('T', ' ') }} UTC</small>{% else %}<small class="text-muted">nunca</small>{% endif %}</td>{% endif %}
+      {% if modo == 'nuvem' %}<td>{% if l.agente_erro %}<span class="text-danger">erro: {{ l.agente_erro[:60] }}</span>{% elif l.agente_em %}<small>visto {{ l.agente_em[:16]|replace('T', ' ') }} UTC</small>{% else %}<small class="text-danger">nunca se conectou</small>{% endif %}</td>{% endif %}
       <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('auth.trocar_unidade', unidade_id=l.unidade.id) }}">Abrir</a></td>
     </tr>
   {% else %}<tr><td colspan="10" class="text-muted">Nenhuma unidade. <a href="{{ url_for('painel.unidades') }}">Cadastrar</a>.</td></tr>{% endfor %}

@@ -2,7 +2,9 @@
 pode rodar mais de um worker sem duplicar envio."""
 import json
 import logging
+import os
 from datetime import timedelta
+from urllib.parse import urlparse
 
 from app import db
 from integrations import DispositivoErro, FotoRejeitada, adaptador_para
@@ -113,9 +115,34 @@ def _precisa_responsavel(pessoa):
 def processar_item(item, adapter, dispositivo):
     pessoa = db.query("SELECT * FROM pessoas WHERE id = %s", (item["pessoa_id"],), one=True) if item["pessoa_id"] else None
     tipo = item["tipo"]
+    payload = item.get("payload") or {}
 
+    # ---- comandos de catraca (vêm do painel na nuvem; só o agente alcança o equipamento)
     if tipo == "set_clock":
-        adapter.set_clock(fuso=item["payload"].get("fuso", "America/Sao_Paulo"))
+        adapter.set_clock(fuso=payload.get("fuso", "America/Sao_Paulo"))
+        return
+    if tipo == "liberar":
+        adapter.release(payload.get("sentido", "ambos"))
+        return
+    if tipo == "testar":
+        info = adapter.identify_device()
+        db.execute(
+            "UPDATE dispositivos SET status = 'online', ultimo_contato = now(), firmware = %s, serial = COALESCE(%s, serial), "
+            "device_id_fabricante = COALESCE(%s, device_id_fabricante) WHERE id = %s",
+            (info.get("firmware"), info.get("serial"), int(info["device_id"]) if info.get("device_id") else None, dispositivo["id"]),
+        )
+        return
+    if tipo == "configurar_monitor":
+        # O Monitor aponta pra ESTE servidor (quem fala com a catraca), nunca pra nuvem
+        base = urlparse(os.environ.get("BASE_URL", "http://127.0.0.1:8000"))
+        token = os.environ.get("MONITOR_TOKEN", "")
+        adapter.configurar_monitor(base.hostname, base.port or (443 if base.scheme == "https" else 80), f"api/notifications/{token}")
+        return
+    if tipo == "modo":
+        url = f"{os.environ.get('BASE_URL', 'http://127.0.0.1:8000').rstrip('/')}/api/catraca/{os.environ.get('MONITOR_TOKEN', '')}"
+        novo = payload.get("modo", "standalone")
+        adapter.configurar_modo_online(url, ativar=(novo == "pro"))
+        db.execute("UPDATE dispositivos SET modo = %s WHERE id = %s", (novo, dispositivo["id"]))
         return
 
     if tipo == "remove_user":

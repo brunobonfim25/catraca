@@ -123,6 +123,9 @@ def test_liberacao_manual_registra_quem_e_avisa(cliente, sincronizado, simulador
     assert r.status_code == 302
     ev = _eventos()[-1]
     assert ev["tipo"] == tipos.SAIDA_ANTECIPADA and ev["origem"] == "manual" and ev["autorizado_por"] == sincronizado["admin"]["id"]
+    from worker import sync
+
+    sync.processar_fila()  # o giro é um comando na fila, executado por quem fala com a catraca
     assert simulador["estado"].liberacoes[-1]["parameters"] == "allow=anticlockwise"
     assert "saída antecipada" in db.query("SELECT texto FROM fila_notificacao ORDER BY id DESC", one=True)["texto"]
     assert cliente.post("/painel/liberar", data={"pessoa_id": sincronizado["maria"]["pessoa_id"], "sentido": "saida", "justificativa": "x"}).status_code == 302

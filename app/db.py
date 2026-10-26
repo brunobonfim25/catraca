@@ -21,9 +21,12 @@ from psycopg2 import pool as pgpool
 _pool = None
 _lock = threading.Lock()
 _url = None
-# Parâmetros de sessão aplicados em toda transação (ex.: nexosix.outbox='on' no servidor local,
-# que liga os triggers do espelho). Preenchido por create_app/worker a partir do MODO.
+# Parâmetros de sessão aplicados em toda transação (nexosix.outbox='on' liga os triggers do
+# espelho). `gucs_fn` são funções que devolvem parâmetros dinâmicos (ex.: nexosix.unidade = a
+# unidade da requisição ou do job do worker, pra nuvem saber de quem é cada linha do outbox).
 gucs = {}
+gucs_fn = []
+contexto = threading.local()  # contexto.unidade_id, usado pelo worker fora de requisição
 
 
 def init(database_url, minconn=1, maxconn=10):
@@ -68,13 +71,20 @@ def conexao():
 
 
 @contextmanager
-def transacao():
-    """Cursor dentro de uma transação. Commit ao sair sem erro, rollback com erro."""
+def transacao(outbox=None):
+    """Cursor dentro de uma transação. Commit ao sair sem erro, rollback com erro.
+    outbox=False desliga o espelho só nesta transação (escritas de controle que não devem
+    viajar entre local e nuvem)."""
     with conexao() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         try:
             for chave, valor in gucs.items():
                 cur.execute(f"SET LOCAL {chave} = %s", (valor,))
+            for fn in gucs_fn:
+                for chave, valor in (fn() or {}).items():
+                    cur.execute(f"SET LOCAL {chave} = %s", (str(valor),))
+            if outbox is False:
+                cur.execute("SET LOCAL nexosix.outbox = 'off'")
             yield cur
             conn.commit()
         except Exception:
@@ -92,9 +102,9 @@ def query(sql, params=None, one=False):
         return cur.fetchall()
 
 
-def execute(sql, params=None, returning=False):
+def execute(sql, params=None, returning=False, outbox=None):
     """Executa INSERT/UPDATE/DELETE. Com returning=True devolve a primeira linha."""
-    with transacao() as cur:
+    with transacao(outbox=outbox) as cur:
         cur.execute(sql, params)
         if returning:
             return cur.fetchone()

@@ -2,12 +2,10 @@
 import json
 
 from flask import Blueprint, abort, current_app, flash, g, redirect, render_template, request, url_for
-from urllib.parse import urlparse
 
 from .. import db
 from ..auditoria import auditar
 from ..auth.rbac import exige, unidade_atual_ou_403
-from integrations import DispositivoErro, adaptador_para
 from . import service
 
 bp = Blueprint("dispositivos", __name__, url_prefix="/dispositivos")
@@ -34,7 +32,8 @@ def _salvar(d, f):
         porta=int(f.get("porta") or 80), usuario_api=f.get("usuario_api") or "admin", funcao=f.get("funcao") or "catraca",
         sentido=f.get("sentido") or "bidirecional", modo=f.get("modo") or "standalone", ativo=f.get("ativo") == "1",
     )
-    cfg = {"allow_entrada": f.get("allow_entrada") or "clockwise", "allow_saida": f.get("allow_saida") or "anticlockwise"}
+    cfg = {"allow_entrada": f.get("allow_entrada") or "clockwise", "allow_saida": f.get("allow_saida") or "anticlockwise",
+           "ip_vpn": (f.get("ip_vpn") or "").strip() or None}
     if d:
         sets = ", ".join(f"{k} = %s" for k in campos)
         params = list(campos.values()) + [json.dumps(cfg), d["id"]]
@@ -90,42 +89,28 @@ def detalhe(dispositivo_id):
         "SELECT dp.*, p.nome, p.tipo FROM dispositivo_pessoa dp JOIN pessoas p ON p.id = dp.pessoa_id WHERE dp.dispositivo_id = %s "
         "ORDER BY CASE dp.foto_sync_status WHEN 'erro' THEN 0 WHEN 'pendente' THEN 1 ELSE 2 END, p.nome LIMIT 300", (dispositivo_id,),
     )
-    base = current_app.config["BASE_URL"]
-    token = current_app.config["MONITOR_TOKEN"]
     return render_template("dispositivos/detalhe.html", d=d, leitores=leitores, fila=fila, pessoas=pessoas, fuso=un["fuso"],
-                           url_monitor=f"{base}/api/notifications/{token}", url_online=f"{base}/api/catraca/{token}")
+                           agente=(un["config"] or {}).get("agente") or {}, agente_visto_em=(un["config"] or {}).get("agente_visto_em"))
 
 
+# Quem fala com a catraca é o worker (na escola). O painel só enfileira o comando e o
+# resultado aparece em segundos no status do dispositivo / na fila.
 @bp.post("/<int:dispositivo_id>/testar")
 @exige("gerir_dispositivos")
 def testar(dispositivo_id):
-    un, d = _disp(dispositivo_id)
-    try:
-        info = adaptador_para(d).identify_device()
-        db.execute("UPDATE dispositivos SET status = 'online', ultimo_contato = now(), firmware = %s, serial = COALESCE(%s, serial), device_id_fabricante = COALESCE(%s, device_id_fabricante) WHERE id = %s",
-                   (info.get("firmware"), info.get("serial"), int(info["device_id"]) if info.get("device_id") else None, dispositivo_id))
-        flash(f"Conectou: serial {info.get('serial')}, firmware {info.get('firmware')}, device_id {info.get('device_id')}", "success")
-    except DispositivoErro as e:
-        db.execute("UPDATE dispositivos SET status = 'offline' WHERE id = %s", (dispositivo_id,))
-        flash(f"Falhou: {e}", "danger")
+    _disp(dispositivo_id)
+    service.enfileirar(dispositivo_id, "testar")
+    flash("Teste de conexão enviado ao servidor da escola. Atualize em instantes: serial/firmware/device_id aparecem aqui.", "info")
     return redirect(url_for("dispositivos.detalhe", dispositivo_id=dispositivo_id))
 
 
 @bp.post("/<int:dispositivo_id>/monitor")
 @exige("gerir_dispositivos")
 def configurar_monitor(dispositivo_id):
-    un, d = _disp(dispositivo_id)
-    base = urlparse(current_app.config["BASE_URL"])
-    token = current_app.config["MONITOR_TOKEN"]
-    try:
-        # [DOC] monitor.hostname/port/path; a catraca monta http://hostname:port/path/<endpoint>
-        porta = base.port or (443 if base.scheme == "https" else 80)
-        adaptador_para(d).configurar_monitor(base.hostname, porta, f"api/notifications/{token}")
-        auditar("configurar_monitor", "dispositivo", dispositivo_id, depois={"hostname": base.hostname, "port": porta})
-        aviso = " Atenção: a doc do Monitor só exemplifica HTTP; se o Railway exigir HTTPS, validar no equipamento." if base.scheme == "https" else ""
-        flash("Monitor configurado na catraca." + aviso, "success")
-    except DispositivoErro as e:
-        flash(f"Falhou: {e}", "danger")
+    _disp(dispositivo_id)
+    service.enfileirar(dispositivo_id, "configurar_monitor")
+    auditar("configurar_monitor", "dispositivo", dispositivo_id)
+    flash("Configuração do Monitor enfileirada (a catraca passa a avisar o servidor da escola).", "info")
     return redirect(url_for("dispositivos.detalhe", dispositivo_id=dispositivo_id))
 
 
@@ -136,14 +121,9 @@ def modo(dispositivo_id):
     novo = request.form.get("modo")
     if novo not in ("standalone", "pro"):
         abort(400)
-    url = f"{current_app.config['BASE_URL']}/api/catraca/{current_app.config['MONITOR_TOKEN']}"
-    try:
-        adaptador_para(d).configurar_modo_online(url, ativar=(novo == "pro"))
-        db.execute("UPDATE dispositivos SET modo = %s WHERE id = %s", (novo, dispositivo_id))
-        auditar("modo", "dispositivo", dispositivo_id, antes={"modo": d["modo"]}, depois={"modo": novo})
-        flash(f"Modo {novo} aplicado na catraca.", "success")
-    except DispositivoErro as e:
-        flash(f"Falhou: {e}", "danger")
+    service.enfileirar(dispositivo_id, "modo", payload={"modo": novo})
+    auditar("modo", "dispositivo", dispositivo_id, antes={"modo": d["modo"]}, depois={"modo": novo})
+    flash(f"Mudança para {novo} enfileirada.", "info")
     return redirect(url_for("dispositivos.detalhe", dispositivo_id=dispositivo_id))
 
 

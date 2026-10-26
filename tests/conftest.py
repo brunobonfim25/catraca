@@ -73,8 +73,19 @@ def limpar(app, simulador):
     with app.app_context():
         tabelas = [r["tablename"] for r in db.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'schema_migrations'")]
         db.execute("TRUNCATE " + ", ".join(tabelas) + " RESTART IDENTITY CASCADE")
+        db.execute("INSERT INTO espelho_estado DEFAULT VALUES")
     simulador["estado"].reset()
+    db.gucs, db.contexto.unidade_id = {}, None
     yield
+
+
+@pytest.fixture
+def outbox_ligado(ctx):
+    """Liga os triggers do espelho como no agente/nuvem (TestConfig roda em MODO=unico)."""
+    db.gucs = {"nexosix.outbox": "on"}
+    db.contexto.unidade_id = None
+    yield
+    db.gucs, db.contexto.unidade_id = {}, None
 
 
 @pytest.fixture

@@ -38,7 +38,7 @@ Fora do MVP: WhatsApp, integração com Agenda ActiveSoft (app que a escola usa)
 - **Front:** HTML/CSS/JS + Bootstrap 5. Sem React no MVP. Webcam via `getUserMedia` no navegador.
 - **Jobs:** worker Python separado para sincronização com catracas e envio de Telegram (fila em tabela PostgreSQL com `SELECT ... FOR UPDATE SKIP LOCKED`; Redis só se precisar depois).
 - **Tempo real no painel:** polling a cada 5 s no MVP; WebSocket depois.
-- **Deploy:** servidor local na escola (web + worker + PostgreSQL; ver 8b) e Railway só com web + PostgreSQL em `MODO=nuvem`; variáveis de ambiente, `git push origin main` faz deploy da nuvem. Fuso `America/Sao_Paulo`; salvar timestamps em UTC (`timestamptz`) e converter na exibição.
+- **Deploy:** Railway (web + worker + PostgreSQL, `MODO=nuvem`) é o sistema; na escola um agente (`MODO=local`, ver 8b). Variáveis de ambiente, `git push origin main` faz deploy da nuvem. Fuso `America/Sao_Paulo`; salvar timestamps em UTC (`timestamptz`) e converter na exibição.
 - **Ambiente do Bruno:** Windows, PowerShell, repo local em `C:\Users\Bruno Bonfim\`. Comandos de terminal devem ser PowerShell.
 - **Padrão de código:** módulos pequenos, funções puras onde der, docstring curta em PT-BR, nomes em português para domínio (`aluno`, `responsavel`, `turma`) e inglês para infra (`db`, `queue`, `adapter`).
 - **Segredos:** nunca no código. `.env` local, variáveis no Railway. Senha admin da catraca é segredo.
@@ -149,28 +149,33 @@ Todas as tabelas de domínio têm `unidade_id` (e `empresa_id` via unidade). Ín
 7. Painel/relatórios, exceções manuais, auditoria, LGPD (exclusão).
 8. Operação assistida no Recreio; depois replicar nas outras 3 unidades (só cadastro de unidade + dispositivos).
 
-## 8b. Decisão de arquitetura (26/10/2026) — Modelo 3
+## 8b. Decisão de arquitetura (26/10/2026) — nuvem é o sistema, escola tem um agente
 
-Depois de ouvir um integrador Control iD com clientes em condomínio, colégio e clube, o Bruno
-escolheu: **servidor local na escola + nuvem como espelho**.
+Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno decidiu:
+**o sistema web fica na nuvem; na escola fica só o básico** — um agente que fala com a catraca.
 
-- **Servidor local** (`MODO=local`, mini PC Windows com NSSM/waitress ou Linux com systemd):
-  web + worker + PostgreSQL. A catraca fala só com ele (Monitor e modo Pro na LAN). Cadastro,
-  foto e regras são feitos nele. Fica ligado antes da primeira entrada.
-- **Nuvem** (`MODO=nuvem`, Railway): recebe o espelho de cada linha alterada
-  (`espelho_outbox` por trigger → `POST /api/espelho/<token>`), serve o painel consolidado
-  da rede (`/painel/rede`) e é **somente leitura**. É o backup vivo.
-- **Ids** por faixa (`flask configurar-local` → `unidade_id × 10M`) para as unidades
-  conviverem na mesma base da nuvem. A nuvem cria empresa/unidade; o local usa os mesmos ids.
-- **Contingência** (catraca sem servidor): aluno de turma "só com responsável" recebe na
-  catraca a regra `Nexosix - so entrada` (só portal de entrada). Offline, a catraca nega a
-  saída dele; a recepção libera pelo painel/portão PCD. Status `contingencia` fica no painel
-  até a catraca avisar que voltou (`operation_mode`).
-- Por que não o Monitor direto na nuvem: a saída em modo Pro precisa de resposta em tempo real;
-  internet da escola oscila. Notificação continua funcionando em qualquer modo (o Monitor
-  empurra eventos; o Telegram sai do servidor local quando houver internet).
-- Fica para depois: cadastro pela nuvem descendo para o local (hoje o fluxo é só local → nuvem)
-  e failover automático (hoje é manual: restaurar backup num PC novo).
+- **Nuvem** (`MODO=nuvem`, Railway): painel, cadastro, foto por webcam (HTTPS), turmas,
+  regras, relatórios, usuários, Telegram. Fonte da verdade. Worker da nuvem: Telegram, LGPD.
+- **Agente** (`MODO=local`, mini PC na escola, NSSM/waitress ou systemd): cópia do cadastro da
+  unidade + API da catraca (Monitor, modo Pro) + worker (fila → catraca, coleta, sync). Sem
+  painel: qualquer rota que não seja API redireciona para a nuvem. Fica ligado antes da
+  primeira entrada; `BASE_URL=http://<IP fixo>:8000` é o endereço que a catraca usa.
+- **Sync bidirecional por outbox** (`espelho_outbox`, triggers 003/004): a nuvem marca cada
+  linha com `nexosix.unidade` (GUC); o agente puxa as da sua unidade (`/reverso`, cursor em
+  `espelho_estado`) e empurra as suas. Carga inicial por `/snapshot`. Aplicar nunca gera eco.
+  Donos: nuvem → cadastro, itens novos da fila, liberação manual; agente → eventos, presença,
+  esperas, status de sync e da catraca (colunas protegidas em `COLUNAS_DO_AGENTE`).
+- **Comandos à catraca** (testar, Monitor, modo, hora, liberar) são itens da `fila_sync`
+  criados pelo painel e executados pelo agente — a nuvem nunca fala com a catraca.
+- **Ids**: agente usa a faixa `unidade_id × 10M` (`flask configurar-local`); nuvem, ids pequenos.
+- **Contingência** (agente parado): aluno "só com responsável" tem na catraca a regra
+  `Nexosix - so entrada` (só portal de entrada) → offline a catraca nega a saída dele e a
+  recepção libera pelo portão PCD. Status `contingencia` fica no painel até o `operation_mode`.
+- **Internet fora**: agente segue decidindo com a cópia local; fila sobe depois.
+- **Fase 2** (redundância pedida pelo Bruno): com a catraca na VPN (client da Control iD),
+  a nuvem assume a catraca quando o agente some (`dispositivos.config.ip_vpn` já existe).
+  Depende de confirmar o client VPN no firmware do iDFace.
+- `MODO=unico` = tudo numa máquina (dev, testes, escola sem nuvem).
 
 ## 9. Como trabalhar com o Bruno
 

@@ -6,69 +6,73 @@ pais por Telegram. Multi-tenant (empresa → unidades). Piloto: GEPPP, unidade R
 Briefing completo e decisões: [`CLAUDE.md`](CLAUDE.md). O que é documentado × suposição × testado
 na catraca: [`integrations/controlid/README.md`](integrations/controlid/README.md).
 
-## Arquitetura (Modelo 3 — decidido em 26/10/2026)
+## Arquitetura (decidida em 26/10/2026)
 
 ```
- ESCOLA (rede local)                                   NUVEM (Railway)
- ┌─────────────────────────────────────────┐           ┌──────────────────────────────┐
- │ servidor local (mini PC, MODO=local)    │  HTTPS    │ web MODO=nuvem + PostgreSQL  │
- │  web (painel da secretaria/recepção)    │ ───────▶  │  recebe o espelho (outbox)   │
- │  worker (catraca, Telegram, espelho)    │  só sai   │  painel da rede (4 unidades) │
- │  PostgreSQL local                       │           │  somente leitura · backup    │
- │        ▲ LAN                            │           └──────────────────────────────┘
- │  catraca idBlock Next (Monitor + Pro)   │
- └─────────────────────────────────────────┘
+ NUVEM (Railway)  — o sistema                     ESCOLA — agente
+ ┌────────────────────────────────────┐           ┌─────────────────────────────────────┐
+ │ web MODO=nuvem                     │  HTTPS    │ mini PC, MODO=local                 │
+ │  painel, cadastro, fotos (webcam), │ ◀──────▶  │  web: só API da catraca             │
+ │  turmas, regras, relatórios,       │  só o     │  worker: fila → catraca, coleta,    │
+ │  usuários, Telegram                │  agente   │          sincronização com a nuvem  │
+ │ PostgreSQL (fonte da verdade)      │  liga     │  PostgreSQL (cópia da unidade)      │
+ └────────────────────────────────────┘           │        ▲ LAN                        │
+                                                  │  catraca idBlock Next (Monitor+Pro) │
+                                                  └─────────────────────────────────────┘
 ```
 
-- A **catraca decide com o servidor local** (modo Pro na saída, Monitor para eventos). Internet
-  fora do ar não afeta a catraca; só atrasa o Telegram.
-- O servidor local **espelha** cada linha alterada para a nuvem (`espelho_outbox`, triggers da
-  migration 003). A nuvem é réplica: backup vivo + painel consolidado da rede. Idempotente;
-  nada entra na rede da escola (a conexão sempre sai de dentro).
-- Cada escola usa uma **faixa de ids** própria (`unidade_id × 10 milhões`), então os dados das 4
-  unidades convivem numa só base na nuvem sem colidir.
-- Se o servidor local morrer, os dados estão na nuvem; restaura-se outro PC com o backup do dia
-  (ou `pg_dump` da nuvem filtrando a unidade).
-
-## Instalar o servidor local (Windows, PowerShell como administrador)
-
-1. Instale Python 3.12, PostgreSQL 16 (crie o banco `nexosix`), [NSSM](https://nssm.cc) em
-   `C:\nexosix\nssm.exe` e [Caddy](https://caddyserver.com) em `C:\nexosix\caddy.exe`.
-2. Na nuvem, crie a empresa e a unidade (painel → Unidades) e gere o token:
-   `flask --app wsgi token-espelho --unidade-id 1` (shell do Railway). Anote `ESPELHO_TOKEN`.
-3. No PC da escola:
-   ```powershell
-   git clone https://github.com/brunobonfim25/catraca C:\nexosix\app
-   cd C:\nexosix\app
-   .\deploy\windows\instalar.ps1 -EmpresaId 1 -UnidadeId 1 -Empresa "GEPPP" -Unidade "Recreio"
-   ```
-   O script cria o `.env` (edite `DATABASE_URL`, `ADMIN_EMAIL/SENHA`, `BASE_URL`, `NUVEM_URL`,
-   `ESPELHO_TOKEN`), migra, reserva a faixa de ids e registra os serviços **NexosixWeb**,
-   **NexosixWorker** e **NexosixCaddy** (iniciam com o Windows, antes do login) e o backup
-   diário (`C:\nexosix\backups`, 14 dias).
-4. Painel: `https://nexosix.local` (HTTPS é obrigatório para a webcam; nos PCs da secretaria
-   adicione `<IP do servidor> nexosix.local` no `hosts`). A catraca usa `http://<IP>:8000`.
-5. **O PC servidor fica ligado** (ou liga antes da primeira entrada). Qualquer PC da secretaria
-   acessa o painel pelo navegador.
-
-Linux (mini PC Ubuntu): units em `deploy/linux/` (`nexosix-web.service`, `nexosix-worker.service`,
-`Caddyfile`, `backup.sh`).
+- **A nuvem é o sistema.** Secretaria e direção usam só ela (HTTPS, webcam, Telegram).
+- **O agente é a parte "básica" na escola**: mantém uma cópia do cadastro da unidade e fala
+  com a catraca na rede local — decide entrada/saída em tempo real (modo Pro), recebe o
+  Monitor, envia fotos/regras, coleta logs. Sobe eventos, presença e status para a nuvem.
+- **Internet caiu** → o agente continua decidindo com a cópia local; eventos ficam na fila e
+  sobem quando voltar (Telegram sai atrasado com a hora real).
+- **Agente parou** → a catraca entra em contingência: libera entrada, **nega a saída de quem
+  precisa de responsável** (regra só no portal de entrada); a recepção libera pelo portão PCD
+  e registra no painel. Eventos ficam na catraca e são coletados quando o agente voltar.
+  Fase 2: com a catraca na VPN (client da Control iD), a nuvem pode assumir a catraca.
+- Sincronização por **outbox**: toda escrita vira uma linha em `espelho_outbox` (trigger); a
+  nuvem marca de qual unidade é cada linha; o agente puxa as dele (`/api/espelho/<token>/reverso`)
+  e empurra as suas (`POST /api/espelho/<token>`). Aplicar nunca gera eco. Ids não colidem: o
+  agente usa a faixa `unidade_id × 10 milhões`.
+- Tudo que o painel pede à catraca (testar, Monitor, modo, liberar, hora) vira **comando na
+  fila**, que desce e é executado pelo agente em segundos.
 
 ## Nuvem (Railway)
 
-Dois serviços: **PostgreSQL** e **web** (`railway.json`). Variáveis do web: `MODO=nuvem`,
-`DATABASE_URL`, `SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_SENHA`, `BASE_URL`. Sem worker na nuvem
-(catracas e Telegram são do servidor local). `git push origin main` faz o deploy.
+Três serviços: **PostgreSQL**, **web** (`railway.json`: bootstrap + gunicorn) e **worker**
+(`python -m worker.main` — Telegram, LGPD, limpeza). Variáveis: `MODO=nuvem`, `DATABASE_URL`,
+`SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_SENHA`, `BASE_URL` (URL pública), `TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`. `git push origin main` faz o deploy.
+Depois do primeiro deploy: `flask --app wsgi telegram-webhook`.
 
-Na nuvem o painel é **somente leitura** (edita-se na escola). Usuários da escola entram na
-nuvem com a mesma senha (a tabela `usuarios_admin` é espelhada); `/painel/rede` mostra as
-unidades, presença, negados, catracas e a hora do último espelho.
+Para cada escola: painel → Unidades → criar; shell do Railway:
+`flask --app wsgi token-espelho --unidade-id <id>` → `ESPELHO_TOKEN` para o agente.
 
-## Rodar em desenvolvimento (sem catraca)
+## Agente na escola (Windows, PowerShell como administrador)
+
+1. Instale Python 3.12, PostgreSQL 16 (banco `nexosix`) e [NSSM](https://nssm.cc) em `C:\nexosix\nssm.exe`.
+2. Dê **IP fixo** ao PC (a catraca liga nele).
+3. ```powershell
+   git clone https://github.com/brunobonfim25/catraca C:\nexosix\app
+   cd C:\nexosix\app
+   .\deploy\windows\instalar.ps1 -UnidadeId 1
+   ```
+   O script cria o `.env` (edite `DATABASE_URL`, `NUVEM_URL`, `ESPELHO_TOKEN`, `BASE_URL=http://<IP>:8000`),
+   migra, reserva a faixa de ids, registra os serviços **NexosixAgente** e **NexosixWorker**
+   (sobem com o Windows, antes do login), abre a porta 8000 e agenda o backup diário.
+4. O worker baixa o cadastro da unidade na primeira rodada. Status: `http://localhost:8000/agente`.
+5. Na nuvem: Catracas → cadastrar com o IP do iDFace primário → **Testar conexão** →
+   **Configurar Monitor** → (depois) **Mudar para Pro**. O agente executa e o resultado aparece no painel.
+6. O PC fica ligado (ou liga antes da primeira entrada).
+
+Linux (mini PC Ubuntu): `deploy/linux/` (systemd web + worker, `backup.sh`).
+
+## Rodar em desenvolvimento (tudo numa máquina, sem catraca)
 
 ```powershell
 python -m venv .venv; .\.venv\Scripts\Activate.ps1; pip install -r requirements.txt
-Copy-Item .env.example .env        # DATABASE_URL, SECRET_KEY, ADMIN_EMAIL, ADMIN_SENHA, MONITOR_TOKEN
+Copy-Item .env.example .env        # MODO=unico, DATABASE_URL, SECRET_KEY, ADMIN_EMAIL, ADMIN_SENHA, MONITOR_TOKEN
 flask --app wsgi bootstrap
 flask --app wsgi run --debug       # http://localhost:5000 (localhost libera a webcam sem HTTPS)
 python -m worker.main              # outro terminal
@@ -88,27 +92,27 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8085/sim/identificar -Conte
 ## Testes
 
 PostgreSQL de teste em `DATABASE_URL_TEST` (padrão `postgresql://postgres@127.0.0.1:5433/nexosix_test`;
-o banco é recriado a cada rodada).
+o banco é recriado a cada rodada; o teste ponta a ponta cria também `nexosix_test_nuvem`).
 
 ```powershell
 $env:DATABASE_URL_TEST = "postgresql://postgres:postgres@localhost:5432/nexosix_test"
 pytest
 ```
 
-A suíte sobe a catraca simulada e o servidor Flask em HTTP real: regras de saída, Monitor,
-modo Pro, contingência (aluno que precisa de responsável não sai sem servidor), fila de sync,
-coleta de logs, Telegram, espelho local→nuvem, nuvem somente leitura, permissões e telas.
+77 testes: regras de saída, Monitor, modo Pro, contingência, fila de sync, coleta, Telegram,
+outbox/snapshot, e um ponta a ponta com a **nuvem em outro processo** (cadastro na nuvem →
+agente baixa → catraca simulada → evento sobe → liberação manual desce e gira a catraca).
 
 ## Primeiro dia com a catraca real
 
 1. Na rede da escola: `python -m scripts.testar_catraca --ip <IP do iDFace primário> --senha <senha>`.
-2. Painel → Catracas → cadastrar com o IP → **Testar conexão** (preenche serial/firmware/device_id).
-3. **Configurar Monitor** → a catraca passa a chamar `http://<IP do servidor>:8000/api/notifications/<MONITOR_TOKEN>/…`.
+2. Nuvem → Catracas → cadastrar com o IP → **Testar conexão** (o agente preenche serial/firmware/device_id).
+3. **Configurar Monitor** → a catraca passa a chamar `http://<IP do agente>:8000/api/notifications/<MONITOR_TOKEN>/…`.
    "Último contato" deve atualizar a cada 30 s.
 4. Pessoa de teste com foto → Catracas → detalhe: foto `sincronizado`.
 5. Passar em Standalone → evento com o sentido certo (senão, ajustar o mapeamento de leitores).
 6. **Mudar para Pro** → repetir com um aluno de turma "só sai com responsável"; desligar o
-   servidor e conferir que a catraca entra em contingência e **nega** a saída dele.
+   agente e conferir que a catraca entra em contingência e **nega** a saída dele.
 7. Registrar em `integrations/controlid/README.md` o que foi validado (data, firmware).
 
 ## Estrutura
@@ -116,10 +120,10 @@ coleta de logs, Telegram, espelho local→nuvem, nuvem somente leitura, permiss�
 ```
 app/            Flask: auth, pessoas, dispositivos, acesso (regras), eventos (ingestão), notificacoes, painel, api, espelho
 integrations/   base_adapter + controlid (adapter fiel à doc, simulador HTTP, README documentado×testado)
-worker/         sync (fila → catraca), collect (logs pendentes), notify (Telegram), espelho (→ nuvem), lgpd, main
-migrations/     SQL numerado (001 base, 002 avisos, 003 espelho/contingência)
-deploy/         windows (instalar.ps1, backup.ps1, Caddyfile) · linux (systemd, Caddyfile, backup.sh)
-tests/          pytest (73 testes)
+worker/         sync (fila → catraca), collect (logs), notify (Telegram), espelho (nuvem ↔ agente), lgpd, main
+migrations/     SQL numerado (001 base, 002 avisos, 003 outbox/contingência, 004 outbox por unidade, 005 comandos)
+deploy/         windows (instalar.ps1, backup.ps1) · linux (systemd, backup.sh)
+tests/          pytest
 ```
 
 ## Perfis do painel
@@ -130,6 +134,5 @@ tests/          pytest (73 testes)
 ## LGPD
 
 Foto é dado biométrico: consentimento registrado por pessoa (com arquivo opcional), fotos no banco
-(não em disco), desligamento remove da catraca na hora e apaga a foto em 30 dias (`worker/lgpd.py`),
-exclusão imediata disponível no painel, auditoria de toda ação. O espelho leva a foto para a nuvem
-(backup do mesmo controlador); a purga de 30 dias também é espelhada.
+(não em disco), desligamento remove da catraca na hora e apaga a foto em 30 dias (`worker/lgpd.py`,
+a exclusão desce para o agente), exclusão imediata disponível no painel, auditoria de toda ação.

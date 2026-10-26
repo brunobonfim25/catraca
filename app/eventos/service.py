@@ -349,17 +349,15 @@ def liberar_manual(unidade, usuario_id, sentido, justificativa, pessoa_id=None, 
 
 
 def _liberar_na_catraca(dispositivo_id, sentido):
-    from integrations import adaptador_para, DispositivoErro
-
-    d = db.query("SELECT * FROM dispositivos WHERE id = %s", (dispositivo_id,), one=True)
+    """Quem gira a catraca é o worker (na escola): entra na fila como comando 'liberar'."""
+    d = db.query("SELECT id FROM dispositivos WHERE id = %s AND ativo", (dispositivo_id,), one=True)
     if not d:
         return "dispositivo não encontrado"
-    try:
-        adaptador_para(d).release({"entrada": "entrada", "saida": "saida"}.get(sentido, "ambos"))
-        return None
-    except DispositivoErro as e:
-        log.warning("liberação manual falhou em %s: %s", d["nome"], e)
-        return str(e)
+    db.execute(
+        "INSERT INTO fila_sync (dispositivo_id, tipo, payload) VALUES (%s, 'liberar', %s)",
+        (dispositivo_id, json.dumps({"sentido": {"entrada": "entrada", "saida": "saida"}.get(sentido, "ambos")})),
+    )
+    return None
 
 
 # ---------------------------------------------------------------- Monitor: outros endpoints

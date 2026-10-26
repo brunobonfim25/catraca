@@ -43,7 +43,7 @@ def rede():
     for u in unidades:
         cfg = u["config"] or {}
         linhas.append({"unidade": u, "dentro": presenca.get(u["id"], 0), "alunos": alunos.get(u["id"], 0), "hoje": hoje.get(u["id"]),
-                       "dispositivos": disps.get(u["id"], []), "espelho_em": cfg.get("espelho_ultimo_em"), "espelho_erro": cfg.get("espelho_erro")})
+                       "dispositivos": disps.get(u["id"], []), "agente_em": cfg.get("agente_visto_em"), "agente_erro": cfg.get("agente_erro")})
     return render_template("painel/rede.html", linhas=linhas)
 
 
@@ -99,9 +99,9 @@ def liberar():
                                          nome_visitante=f.get("visitante"), girar_catraca=f.get("girar") == "1")
     auditar("liberar_manual", "evento", evento["id"], depois={"pessoa_id": pessoa_id, "sentido": f.get("sentido"), "justificativa": justificativa})
     if erro:
-        flash(f"Liberação registrada, mas a catraca não respondeu: {erro}. Use o portão PCD e anote.", "warning")
+        flash(f"Liberação registrada, mas não foi possível acionar a catraca: {erro}. Use o portão PCD e anote.", "warning")
     else:
-        flash("Liberação registrada" + (" e catraca liberada." if f.get("girar") == "1" else "."), "success")
+        flash("Liberação registrada" + (" — comando enviado à catraca (alguns segundos)." if f.get("girar") == "1" else "."), "success")
     return redirect(url_for("painel.recepcao"))
 
 

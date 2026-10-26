@@ -1,6 +1,9 @@
-"""Processo worker (Railway: `python -m worker.main`).
+"""Processo worker (`python -m worker.main`). O que roda depende do MODO:
 
-Loop único: fila de sync → coleta de logs → Telegram → status; LGPD uma vez por hora.
+  unico → tudo: fila da catraca, coleta de logs, Telegram, LGPD (dev ou escola sem nuvem)
+  local → agente da escola: puxa da nuvem, fila da catraca, coleta, sobe eventos, ping
+  nuvem → Telegram, LGPD, limpeza do outbox (a catraca é do agente)
+
 Sem Redis: tudo em tabela PostgreSQL com SKIP LOCKED.
 """
 import logging
@@ -17,44 +20,69 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime
 log = logging.getLogger("worker")
 
 
-def rodada(adaptadores, contadores):
+def _a_cada(contadores, chave, segundos):
+    if time.time() - contadores.get(chave, 0) >= segundos:
+        contadores[chave] = time.time()
+        return True
+    return False
+
+
+def rodada_catraca(adaptadores, contadores):
     ok, falhas = sync.processar_fila(adaptadores=adaptadores)
     if ok or falhas:
         log.info("sync: %d ok, %d falhas", ok, falhas)
-    contadores["coleta"] += 1
-    if contadores["coleta"] % int(os.environ.get("WORKER_COLETA_A_CADA", "6")) == 0:
+    if _a_cada(contadores, "coleta", int(os.environ.get("WORKER_COLETA_SEG", "30"))):
         n = collect.coletar_todos(adaptadores)
         if n:
             log.info("coleta: %d logs novos", n)
         collect.verificar_status()
+
+
+def rodada_nuvem(contadores):
     enviados, falhas = notify.enviar_pendentes()
     if enviados or falhas:
         log.info("telegram: %d enviados, %d falhas", enviados, falhas)
-    if time.time() - contadores["espelho_em"] >= int(os.environ.get("ESPELHO_INTERVALO_SEG", "15")):
-        n = espelho.enviar()
-        if n:
-            log.info("espelho: %d itens enviados à nuvem", n)
-        contadores["espelho_em"] = time.time()
-    if time.time() - contadores["lgpd_em"] > 3600:
+    if _a_cada(contadores, "lgpd", 3600):
         n = lgpd.purgar_desligados()
         if n:
             log.info("lgpd: %d fotos purgadas", n)
-        contadores["lgpd_em"] = time.time()
+        from app.espelho import service as esp
+
+        esp.limpar_outbox_da_nuvem()
+
+
+def rodada_agente(adaptadores, contadores):
+    if not espelho.garantir_carga_inicial():
+        return
+    n = espelho.puxar()
+    if n:
+        log.info("nuvem → agente: %d linhas", n)
+    rodada_catraca(adaptadores, contadores)
+    n = espelho.empurrar()
+    if n:
+        log.info("agente → nuvem: %d linhas", n)
+    if _a_cada(contadores, "ping", 30):
+        espelho.ping()
 
 
 def main():
-    if os.environ.get("MODO", "local") == "nuvem":
-        log.error("MODO=nuvem não roda worker: catracas e Telegram são do servidor da escola. Saindo.")
-        return
+    modo = os.environ.get("MODO", "unico")
     db.init(os.environ["DATABASE_URL"], 1, 4)
-    db.gucs = {"nexosix.outbox": "on"}
-    intervalo = int(os.environ.get("WORKER_INTERVALO_SEG", "5"))
-    adaptadores = {}
-    contadores = {"coleta": 0, "lgpd_em": 0, "espelho_em": 0}
-    log.info("worker iniciado (intervalo %ss)", intervalo)
+    db.gucs = {"nexosix.outbox": "on"} if modo in ("nuvem", "local") else {}
+    if modo == "local":
+        db.contexto.unidade_id = int(os.environ.get("UNIDADE_ID", "0") or 0) or None
+    intervalo = int(os.environ.get("WORKER_INTERVALO_SEG", "3" if modo == "local" else "5"))
+    adaptadores, contadores = {}, {}
+    log.info("worker iniciado em MODO=%s (intervalo %ss)", modo, intervalo)
     while True:
         try:
-            rodada(adaptadores, contadores)
+            if modo == "nuvem":
+                rodada_nuvem(contadores)
+            elif modo == "local":
+                rodada_agente(adaptadores, contadores)
+            else:
+                rodada_catraca(adaptadores, contadores)
+                rodada_nuvem(contadores)
         except Exception:  # noqa: BLE001 — o worker nunca morre por uma rodada ruim
             log.exception("rodada falhou")
             adaptadores.clear()

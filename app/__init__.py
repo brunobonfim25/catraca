@@ -1,6 +1,4 @@
 """create_app: Flask + pool psycopg2 + blueprints."""
-import os
-
 from flask import Flask, g, redirect, session, url_for
 
 from . import db
@@ -8,13 +6,28 @@ from .config import Config
 from .util import formatar_hora, formatar_data_hora
 
 
+def _unidade_da_requisicao():
+    """nexosix.unidade na sessão SQL: a nuvem marca de qual escola é cada linha do outbox
+    (o agente só puxa as linhas da unidade dele)."""
+    from flask import has_request_context
+
+    if has_request_context() and getattr(g, "unidade", None):
+        return {"nexosix.unidade": g.unidade["id"]}
+    uid = getattr(db.contexto, "unidade_id", None)
+    return {"nexosix.unidade": uid} if uid else {}
+
+
 def create_app(config_object=None):
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.from_object(config_object or Config)
+    modo = app.config.get("MODO", "unico")
 
     db.init(app.config["DATABASE_URL"], app.config.get("DB_POOL_MIN", 1), app.config.get("DB_POOL_MAX", 10))
-    # Servidor local liga o outbox do espelho; a nuvem nunca (ela só recebe)
-    db.gucs = {"nexosix.outbox": "on"} if app.config.get("MODO", "local") == "local" else {}
+    # Outbox do espelho só faz sentido quando há dois lados (nuvem ↔ agente)
+    db.gucs = {"nexosix.outbox": "on"} if modo in ("nuvem", "local") else {}
+    db.gucs_fn = [_unidade_da_requisicao]
+    if modo == "local":
+        db.contexto.unidade_id = app.config.get("UNIDADE_ID") or None
 
     from .auth.routes import bp as auth_bp
     from .pessoas.routes import bp as pessoas_bp
@@ -22,23 +35,25 @@ def create_app(config_object=None):
     from .painel.routes import bp as painel_bp
     from .api.routes import bp as api_bp
     from .notificacoes.routes import bp as notificacoes_bp
-    from .espelho.routes import bp as espelho_bp, instalar_somente_leitura
+    from .espelho.routes import bp as espelho_bp, instalar_agente_local
 
     app.register_blueprint(espelho_bp)
-    if app.config.get("MODO") == "nuvem":
-        instalar_somente_leitura(app)
     app.register_blueprint(auth_bp)
     app.register_blueprint(pessoas_bp)
     app.register_blueprint(dispositivos_bp)
     app.register_blueprint(painel_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(notificacoes_bp)
+    if modo == "local":
+        instalar_agente_local(app)
 
     app.jinja_env.filters["hora"] = formatar_hora
     app.jinja_env.filters["data_hora"] = formatar_data_hora
 
     @app.route("/")
     def index():
+        if modo == "local":
+            return redirect(url_for("espelho.agente_status"))
         if session.get("usuario_id"):
             return redirect(url_for("painel.dashboard"))
         return redirect(url_for("auth.login"))
@@ -46,11 +61,11 @@ def create_app(config_object=None):
     @app.route("/health")
     def health():
         db.query("SELECT 1")
-        return {"ok": True, "modo": app.config.get("MODO", "local")}
+        return {"ok": True, "modo": modo}
 
     @app.context_processor
     def _modo():
-        return {"modo": app.config.get("MODO", "local")}
+        return {"modo": modo, "nuvem_url": app.config.get("NUVEM_URL", "")}
 
     from .cli import registrar_comandos
 

@@ -13,9 +13,14 @@ def adaptador_para(dispositivo, simulador=None):
     if fabricante in ("controlid", "simulador"):
         from .controlid.adapter import ControlIdAdapter
 
+        cfg = dispositivo.get("config") or {}
+        host, porta = dispositivo.get("ip") or "127.0.0.1", dispositivo.get("porta") or 80
+        # A nuvem só alcança a catraca pela VPN (endereço cadastrado em config.ip_vpn)
+        if os.environ.get("MODO", "local") == "nuvem" and cfg.get("ip_vpn"):
+            host, porta = cfg["ip_vpn"], int(cfg.get("porta_vpn") or porta)
         return ControlIdAdapter(
-            host=dispositivo.get("ip") or "127.0.0.1",
-            porta=dispositivo.get("porta") or 80,
+            host=host,
+            porta=porta,
             usuario=dispositivo.get("usuario_api") or "admin",
             senha=dispositivo.get("senha_api") or "admin",
         )

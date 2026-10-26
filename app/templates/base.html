@@ -37,6 +37,9 @@
 </nav>
 {% endif %}
 <main class="container-fluid px-4">
+  {% if modo == 'nuvem' and unidade and not (unidade.config or {}).get('agente_visto_em') %}
+    <div class="alert alert-danger py-2">O servidor da escola ({{ unidade.nome }}) ainda não se conectou à nuvem — a catraca não recebe cadastros nem comandos até isso acontecer.</div>
+  {% endif %}
   {% with msgs = get_flashed_messages(with_categories=true) %}
     {% for cat, m in msgs %}<div class="alert alert-{{ cat }} py-2">{{ m }}</div>{% endfor %}
   {% endwith %}

@@ -67,12 +67,21 @@ def test_telas_principais_abrem(cliente, seed):
 def test_turma_nova_e_dispositivo_testar(cliente, seed, simulador):
     r = cliente.post("/turmas/nova", data={"nome": "Pré 2", "turno": "tarde", "exige_responsavel_saida": "1", "tolerancia_entrada_min": "10"})
     assert r.status_code == 302 and db.query("SELECT 1 FROM turmas WHERE nome = 'Pré 2'", one=True)
-    r = cliente.post(f"/dispositivos/{seed['dispositivo']['id']}/testar", follow_redirects=True)
-    assert "SIM-0001" in r.get_data(as_text=True)
-    assert db.query("SELECT firmware FROM dispositivos", one=True)["firmware"] == "6.50.0-sim"
-    r = cliente.post(f"/dispositivos/{seed['dispositivo']['id']}/monitor", follow_redirects=True)
-    assert "Monitor configurado" in r.get_data(as_text=True)
-    assert simulador["estado"].config["monitor"]["path"] == "api/notifications/tok-teste"
+    import os
+
+    from worker import sync
+
+    os.environ["BASE_URL"], os.environ["MONITOR_TOKEN"] = "http://10.0.0.5:8000", "tok-teste"
+    cliente.post(f"/dispositivos/{seed['dispositivo']['id']}/testar")
+    cliente.post(f"/dispositivos/{seed['dispositivo']['id']}/monitor")
+    cliente.post(f"/dispositivos/{seed['dispositivo']['id']}/modo", data={"modo": "pro"})
+    assert db.query("SELECT count(*) AS n FROM fila_sync WHERE tipo IN ('testar','configurar_monitor','modo') AND status = 'pendente'", one=True)["n"] == 3
+    ok, falhas = sync.processar_fila(limite=100)
+    assert ok >= 3 and falhas == 0
+    assert db.query("SELECT firmware, modo FROM dispositivos", one=True) == {"firmware": "6.50.0-sim", "modo": "pro"}
+    assert simulador["estado"].config["monitor"] == {**simulador["estado"].config["monitor"], "hostname": "10.0.0.5", "port": "8000", "path": "api/notifications/tok-teste"}
+    assert simulador["estado"].servidor_online_url() == "http://10.0.0.5:8000/api/catraca/tok-teste"
+    assert "SIM-0001" in cliente.get(f"/dispositivos/{seed['dispositivo']['id']}").get_data(as_text=True)
 
 
 def test_ativacao_telegram_por_token(cliente, seed, app):
