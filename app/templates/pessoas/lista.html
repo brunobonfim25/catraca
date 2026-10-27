@@ -1,40 +1,56 @@
 {% extends "base.html" %}
+{# Uma tela por tipo (Alunos / Responsáveis / Funcionários) e uma de Pendências — a antiga
+   "Pessoas" misturava tudo e a secretaria não sabia por onde começar. #}
+{% set titulos = {'aluno': 'Alunos', 'responsavel': 'Responsáveis', 'funcionario': 'Funcionários', 'visitante': 'Visitantes'} %}
+{% set rotulo_tipo = {'aluno': 'Aluno', 'responsavel': 'Responsável', 'funcionario': 'Funcionário', 'visitante': 'Visitante'} %}
+{% set titulo = 'Pendências' if pendencia else titulos.get(tipo, 'Pessoas') %}
+{% block titulo %}{{ titulo }} — Nexosix Acesso{% endblock %}
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-2">
-  <h3 class="mb-0">Pessoas</h3>
-  {% if tem_permissao('cadastrar_pessoas') %}
-  <div class="btn-group">
-    <a class="btn btn-primary" href="{{ url_for('pessoas.aluno_novo') }}">+ Aluno</a>
-    <a class="btn btn-outline-primary" href="{{ url_for('pessoas.responsavel_novo') }}">+ Responsável</a>
-    <a class="btn btn-outline-primary" href="{{ url_for('pessoas.funcionario_novo') }}">+ Funcionário</a>
+  <div>
+    <h3 class="mb-0">{{ titulo }}</h3>
+    {% if pendencia %}<small class="text-muted">O que ainda falta para a catraca e os avisos funcionarem.</small>
+    {% elif tipo == 'aluno' %}<small class="text-muted">Cadastro → foto → responsáveis. Só com foto o aluno passa na catraca.</small>
+    {% elif tipo == 'responsavel' %}<small class="text-muted">Quem busca o aluno e recebe os avisos no Telegram.</small>
+    {% elif tipo == 'funcionario' %}<small class="text-muted">Equipe da escola com acesso pela catraca.</small>{% endif %}
   </div>
+  {% if tem_permissao('cadastrar_pessoas') and not pendencia %}
+    {% if tipo == 'responsavel' %}<a class="btn btn-primary" href="{{ url_for('pessoas.responsavel_novo') }}">+ Novo responsável</a>
+    {% elif tipo == 'funcionario' %}<a class="btn btn-primary" href="{{ url_for('pessoas.funcionario_novo') }}">+ Novo funcionário</a>
+    {% elif tipo == 'visitante' %}<a class="btn btn-primary" href="{{ url_for('pessoas.visitante_novo') }}">+ Visitante</a>
+    {% else %}<a class="btn btn-primary" href="{{ url_for('pessoas.aluno_novo') }}">+ Novo aluno</a>{% endif %}
   {% endif %}
 </div>
+
+{% if pendencia %}
+<ul class="nav nav-pills mb-3">
+  <li class="nav-item"><a class="nav-link {{ 'active' if pendencia == 'foto' }}" href="{{ url_for('pessoas.lista', pendencia='foto') }}">Sem foto</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if pendencia == 'telegram' }}" href="{{ url_for('pessoas.lista', tipo='responsavel', pendencia='telegram') }}">Responsáveis sem Telegram</a></li>
+</ul>
+{% else %}
 <form class="row g-2 mb-3" method="get">
+  <input type="hidden" name="tipo" value="{{ tipo or '' }}">
   <div class="col-md-4"><input class="form-control" name="q" value="{{ termo }}" placeholder="nome, matrícula ou telefone"></div>
-  <div class="col-md-2"><select class="form-select" name="tipo"><option value="">Todos</option>{% for k in ['aluno','responsavel','funcionario','visitante'] %}<option value="{{ k }}" {{ 'selected' if tipo == k }}>{{ k }}</option>{% endfor %}</select></div>
-  <div class="col-md-2"><select class="form-select" name="turma_id"><option value="">Todas as turmas</option>{% for t in turmas %}<option value="{{ t.id }}" {{ 'selected' if t.id == turma_id }}>{{ t.nome }}</option>{% endfor %}</select></div>
+  {% if tipo in (None, '', 'aluno') %}<div class="col-md-2"><select class="form-select" name="turma_id"><option value="">Todas as turmas</option>{% for t in turmas %}<option value="{{ t.id }}" {{ 'selected' if t.id == turma_id }}>{{ t.nome }}</option>{% endfor %}</select></div>{% endif %}
   <div class="col-md-2 form-check mt-2 ms-3"><input class="form-check-input" type="checkbox" name="desligados" value="1" id="des" {{ 'checked' if request.args.get('desligados') == '1' }}><label class="form-check-label" for="des">incluir desligados</label></div>
   <div class="col-md-1"><button class="btn btn-outline-primary">Buscar</button></div>
 </form>
-<p class="small mb-2">Pendências:
-  <a class="{{ 'fw-bold' if pendencia == 'foto' }}" href="{{ url_for('pessoas.lista', pendencia='foto') }}">sem foto</a> ·
-  <a class="{{ 'fw-bold' if pendencia == 'telegram' }}" href="{{ url_for('pessoas.lista', tipo='responsavel', pendencia='telegram') }}">responsáveis sem Telegram</a>
-  {% if pendencia %} · <a href="{{ url_for('pessoas.lista') }}">limpar</a>{% endif %}
-</p>
+{% endif %}
+
 <table class="table table-sm bg-white align-middle">
-  <thead><tr><th></th><th>Nome</th><th>Tipo</th><th>Turma / cargo</th><th>Status</th><th>Foto</th><th>Telegram</th></tr></thead>
+  <thead><tr><th></th><th>Nome</th>{% if not tipo or pendencia %}<th>Tipo</th>{% endif %}<th>{{ 'Turma' if tipo == 'aluno' else ('Cargo' if tipo == 'funcionario' else 'Turma / cargo') }}</th><th>Status</th><th>Foto</th>{% if tipo != 'aluno' and tipo != 'funcionario' %}<th>Telegram</th>{% endif %}</tr></thead>
   <tbody>
   {% for p in pessoas %}
     <tr>
       <td>{% if p.tem_foto %}<img class="foto-mini" src="{{ url_for('pessoas.foto_jpg', pessoa_id=p.id) }}" alt="">{% endif %}</td>
       <td><a href="{{ url_for('pessoas.detalhe', pessoa_id=p.id) }}">{{ p.nome }}</a></td>
-      <td>{{ p.tipo }}</td><td>{{ p.turma_nome or p.cargo or '' }}</td>
+      {% if not tipo or pendencia %}<td>{{ rotulo_tipo.get(p.tipo, p.tipo) }}</td>{% endif %}
+      <td>{{ p.turma_nome or p.cargo or '' }}</td>
       <td><span class="badge bg-{{ {'ativo':'success','bloqueado':'warning','desligado':'secondary'}[p.status] }}">{{ p.status }}</span></td>
-      <td>{% if p.tem_foto %}✔{% elif p.tipo != 'visitante' %}<a class="text-danger" href="{{ url_for('pessoas.foto', pessoa_id=p.id) }}">sem foto</a>{% endif %}</td>
-      <td>{% if p.responsavel_id %}{{ '✔' if p.telegram_chat_id else '—' }}{% endif %}</td>
+      <td>{% if p.tem_foto %}<span class="text-success">✔ ok</span>{% elif p.tipo != 'visitante' %}<a class="text-danger" href="{{ url_for('pessoas.foto', pessoa_id=p.id) }}">sem foto — tirar</a>{% endif %}</td>
+      {% if tipo != 'aluno' and tipo != 'funcionario' %}<td>{% if p.responsavel_id %}{% if p.telegram_chat_id %}<span class="text-success">✔ ativo</span>{% else %}<a class="text-warning" href="{{ url_for('notificacoes.ativar', responsavel_id=p.responsavel_id) }}">não ativado</a>{% endif %}{% endif %}</td>{% endif %}
     </tr>
-  {% else %}<tr><td colspan="7" class="text-muted">Nenhuma pessoa.</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="7" class="text-muted">{% if pendencia %}Nenhuma pendência — tudo pronto.{% else %}Nenhum cadastro ainda.{% endif %}</td></tr>{% endfor %}
   </tbody>
 </table>
 {% endblock %}

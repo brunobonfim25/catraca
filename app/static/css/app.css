@@ -1,3 +1,26 @@
+/* Layout: menu lateral por papel + conteúdo */
+.layout { display: flex; min-height: 100vh; }
+.sidebar { width: 230px; flex-shrink: 0; background: #1e293b; color: #cbd5e1; padding: 14px 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.sidebar .marca { padding: 4px 20px 12px; border-bottom: 1px solid #334155; margin-bottom: 6px; }
+.sidebar .marca a { color: #fff; font-weight: 700; font-size: 17px; text-decoration: none; }
+.sidebar .marca small { display: block; color: #94a3b8; font-size: 12px; margin-top: 2px; }
+.sidebar .grupo { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: #64748b; padding: 14px 20px 4px; }
+.sidebar .nav-item { display: block; padding: 7px 20px; color: #cbd5e1; text-decoration: none; font-size: 13.5px; }
+.sidebar .nav-item:hover { color: #fff; background: #273449; }
+.sidebar .nav-item.ativo { background: #2563eb; color: #fff; border-radius: 0 20px 20px 0; margin-right: 12px; }
+.principal { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topo { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 8px 24px; display: flex; justify-content: space-between; align-items: center; }
+.conteudo { padding: 18px 24px; }
+@media (max-width: 992px) {
+  .layout { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: static; display: flex; flex-wrap: wrap; padding: 6px 8px; }
+  .sidebar .marca { width: 100%; border: 0; margin: 0; padding: 6px 12px; }
+  .sidebar .grupo { display: none; }
+  .sidebar .nav-item { padding: 6px 10px; }
+  .sidebar .nav-item.ativo { border-radius: 6px; margin: 0; }
+}
+
+/* Estados: verde pronto, amarelo pendente, vermelho atenção — em todo lugar */
 .status-online { color: #198754; }
 .status-offline { color: #dc3545; }
 .status-desconhecido { color: #6c757d; }
@@ -7,4 +30,4 @@
 #camera { width: 100%; max-width: 480px; background: #000; border-radius: 8px; }
 #guia { position: absolute; top: 8%; left: 25%; width: 50%; height: 84%; border: 3px dashed rgba(255,255,255,.7); border-radius: 50%; pointer-events: none; }
 .foto-mini { width: 48px; height: 48px; object-fit: cover; border-radius: 50%; }
-@media print { nav, .no-print { display: none !important; } body { background: #fff; } }
+@media print { .sidebar, .topo, .no-print { display: none !important; } body { background: #fff; } .conteudo { padding: 0; } }

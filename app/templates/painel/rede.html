@@ -1,16 +1,19 @@
 {% extends "base.html" %}
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-2">
-  <h3 class="mb-0">Rede — todas as unidades</h3>
-  {% if tem_permissao('gerir_turmas') %}
+  <div>
+    <h3 class="mb-0">{{ 'Clientes' if usuario.perfil == 'superadmin' else 'Todas as escolas' }}</h3>
+    <small class="text-muted">{{ 'Cada cliente é uma rede; cada rede tem uma ou mais escolas.' if usuario.perfil == 'superadmin' else 'Situação de cada escola da rede agora.' }}</small>
+  </div>
+  {% if tem_permissao('configurar_escola') %}
   <div class="btn-group">
-    {% if usuario.perfil == 'superadmin' %}<a class="btn btn-primary" href="{{ url_for('painel.unidades') }}#nova-empresa">+ Novo colégio (empresa)</a>{% endif %}
-    <a class="btn btn-outline-primary" href="{{ url_for('painel.unidades') }}#nova-unidade">+ Nova unidade</a>
+    {% if usuario.perfil == 'superadmin' %}<a class="btn btn-primary" href="{{ url_for('painel.unidades') }}#nova-empresa">+ Novo cliente</a>{% endif %}
+    <a class="btn btn-outline-primary" href="{{ url_for('painel.unidades') }}#nova-unidade">+ Nova escola</a>
   </div>
   {% endif %}
 </div>
 <table class="table bg-white align-middle">
-  <thead><tr><th>Unidade</th><th>Dentro agora</th><th>Entradas hoje</th><th>Atrasos</th><th>Negados</th><th>Saídas antecipadas</th><th>Catracas</th><th>Último evento</th>{% if modo == 'nuvem' %}<th>Agente na escola</th>{% endif %}<th></th></tr></thead>
+  <thead><tr><th>Escola</th><th>Dentro agora</th><th>Entradas hoje</th><th>Atrasos</th><th>Negados</th><th>Saídas antecipadas</th><th>Catracas</th><th>Último evento</th>{% if modo == 'nuvem' %}<th>Servidor da escola</th>{% endif %}<th></th></tr></thead>
   <tbody>
   {% for l in linhas %}
     <tr>
@@ -25,7 +28,7 @@
       {% if modo == 'nuvem' %}<td>{% if ((l.unidade.config or {}).get('failover') or {}).get('ativo') %}<span class="badge bg-danger">NUVEM NO COMANDO</span><br>{% endif %}{% if l.agente_erro %}<span class="text-danger">erro: {{ l.agente_erro[:60] }}</span>{% elif l.agente_em %}<small>visto {{ l.agente_em[:16]|replace('T', ' ') }} UTC</small>{% else %}<small class="text-danger">nunca se conectou</small>{% endif %}</td>{% endif %}
       <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('auth.trocar_unidade', unidade_id=l.unidade.id) }}">Abrir</a></td>
     </tr>
-  {% else %}<tr><td colspan="10" class="text-muted">Nenhuma unidade. <a href="{{ url_for('painel.unidades') }}">Cadastrar</a>.</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="10" class="text-muted">Nenhuma escola ainda. <a href="{{ url_for('painel.unidades') }}">Cadastrar</a>.</td></tr>{% endfor %}
   </tbody>
 </table>
 {% endblock %}

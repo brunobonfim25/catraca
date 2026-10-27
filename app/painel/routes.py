@@ -207,7 +207,7 @@ def unidades():
 
 
 @bp.post("/empresas/nova")
-@exige("gerir_turmas")
+@exige("configurar_escola")
 def empresa_nova():
     if g.usuario["perfil"] != "superadmin":
         abort(403)
@@ -217,7 +217,7 @@ def empresa_nova():
 
 
 @bp.post("/unidades/nova")
-@exige("gerir_turmas")
+@exige("configurar_escola")
 def unidade_nova():
     f = request.form
     empresa_id = int(f["empresa_id"]) if g.usuario["perfil"] == "superadmin" else g.usuario["empresa_id"]
@@ -232,7 +232,7 @@ def unidade_nova():
 
 
 @bp.route("/unidades/<int:unidade_id>/config", methods=["GET", "POST"])
-@exige("gerir_turmas")
+@exige("configurar_escola")
 def unidade_config(unidade_id):
     un = unidade_atual_ou_403()
     if un["id"] != unidade_id:

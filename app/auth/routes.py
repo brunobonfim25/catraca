@@ -4,7 +4,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from .. import db
 from ..auditoria import auditar
-from .rbac import PERFIS, carregar_usuario, exige, login_obrigatorio, unidades_visiveis, pode_ver_unidade
+from .rbac import PERFIS, ROTULO_PERFIL, carregar_usuario, exige, home_de, login_obrigatorio, unidades_visiveis, pode_ver_unidade
 
 bp = Blueprint("auth", __name__)
 
@@ -18,10 +18,13 @@ def _carregar():
 def _injetar():
     from .rbac import tem_permissao
 
+    u = getattr(g, "usuario", None)
     return {
-        "usuario": getattr(g, "usuario", None),
+        "usuario": u,
         "unidade": getattr(g, "unidade", None),
-        "tem_permissao": lambda p: tem_permissao(getattr(g, "usuario", None), p),
+        "tem_permissao": lambda p: tem_permissao(u, p),
+        "rotulo_perfil": ROTULO_PERFIL.get(u["perfil"], u["perfil"]) if u else "",
+        "escolas_visiveis": unidades_visiveis(u) if u and not u["unidade_id"] else [],
     }
 
 
@@ -43,7 +46,7 @@ def login():
                 visiveis = unidades_visiveis(u)
                 if len(visiveis) == 1:
                     session["unidade_id"] = visiveis[0]["id"]
-            proximo = request.args.get("proximo") or url_for("painel.dashboard")
+            proximo = request.args.get("proximo") or home_de(u)
             return redirect(proximo)
         flash("E-mail ou senha inválidos", "danger")
     return render_template("auth/login.html")
@@ -74,7 +77,7 @@ def usuarios():
             "SELECT u.*, un.nome AS unidade_nome FROM usuarios_admin u LEFT JOIN unidades un ON un.id = u.unidade_id WHERE u.empresa_id = %s ORDER BY u.nome",
             (g.usuario["empresa_id"],),
         )
-    return render_template("auth/usuarios.html", usuarios=rows, perfis=PERFIS, unidades=unidades_visiveis(g.usuario))
+    return render_template("auth/usuarios.html", usuarios=rows, perfis=PERFIS, rotulos=ROTULO_PERFIL, unidades=unidades_visiveis(g.usuario))
 
 
 @bp.route("/usuarios/novo", methods=["POST"])

@@ -1,8 +1,9 @@
 """Perfis e decorators de permissão.
 
 Perfis:
-  superadmin     — Nexosix; vê todas as empresas/unidades
-  admin_unidade  — direção/TI da escola; cadastra tudo, muda regras e dispositivos
+  superadmin     — Nexosix; vê todas as empresas/escolas
+  admin_unidade  — direção/TI da escola; cadastra tudo, muda regras e catracas
+  secretaria     — cadastra alunos, responsáveis, turmas, fotos, Telegram; vê presença
   recepcao       — opera o dia a dia: espera de responsáveis, liberações manuais, visitantes
   coordenacao    — vê presença, atrasos, relatórios; não libera catraca
   auditor        — só leitura (auditoria, relatórios)
@@ -13,20 +14,37 @@ from flask import abort, g, redirect, request, session, url_for
 
 from .. import db
 
-PERFIS = ("superadmin", "admin_unidade", "recepcao", "coordenacao", "auditor")
+PERFIS = ("superadmin", "admin_unidade", "secretaria", "recepcao", "coordenacao", "auditor")
+ROTULO_PERFIL = {"superadmin": "Nexosix", "admin_unidade": "Direção", "secretaria": "Secretaria", "recepcao": "Recepção", "coordenacao": "Coordenação", "auditor": "Auditor"}
 
 # Permissões nomeadas → perfis que as têm. Centralizado pra regra não se espalhar nas rotas.
 PERMISSOES = {
-    "cadastrar_pessoas": {"superadmin", "admin_unidade", "recepcao"},
-    "gerir_turmas": {"superadmin", "admin_unidade"},
+    "cadastrar_pessoas": {"superadmin", "admin_unidade", "secretaria", "recepcao"},
+    "gerir_turmas": {"superadmin", "admin_unidade", "secretaria"},
     "gerir_dispositivos": {"superadmin", "admin_unidade"},
     "gerir_usuarios": {"superadmin", "admin_unidade"},
+    "configurar_escola": {"superadmin", "admin_unidade"},
     "liberar_manual": {"superadmin", "admin_unidade", "recepcao"},
-    "ver_presenca": {"superadmin", "admin_unidade", "recepcao", "coordenacao", "auditor"},
+    "ver_presenca": {"superadmin", "admin_unidade", "secretaria", "recepcao", "coordenacao", "auditor"},
     "ver_relatorios": {"superadmin", "admin_unidade", "coordenacao", "auditor"},
     "ver_auditoria": {"superadmin", "admin_unidade", "auditor"},
     "excluir_lgpd": {"superadmin", "admin_unidade"},
 }
+
+# Tela inicial de cada papel (nome do endpoint Flask)
+# Tela inicial por papel: cada um cai onde trabalha (secretaria em Alunos, recepção na Recepção).
+HOME_POR_PERFIL = {
+    "superadmin": ("painel.rede", {}), "admin_unidade": ("painel.dashboard", {}), "secretaria": ("pessoas.lista", {"tipo": "aluno"}),
+    "recepcao": ("painel.recepcao", {}), "coordenacao": ("painel.dashboard", {}), "auditor": ("painel.dashboard", {}),
+}
+
+
+def home_de(usuario):
+    """URL da tela inicial do usuário."""
+    from flask import url_for
+
+    endpoint, args = HOME_POR_PERFIL.get(usuario["perfil"], ("painel.dashboard", {}))
+    return url_for(endpoint, **args)
 
 
 def carregar_usuario():

@@ -9,45 +9,93 @@
 </head>
 <body class="bg-light">
 {% if usuario %}
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-3">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="{{ url_for('painel.dashboard') }}">Nexosix Acesso</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
-    <div class="collapse navbar-collapse" id="nav">
-      <ul class="navbar-nav me-auto">
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('painel.dashboard') }}">Painel</a></li>
-        {% if not usuario.unidade_id %}<li class="nav-item"><a class="nav-link" href="{{ url_for('painel.rede') }}">Rede</a></li>{% endif %}
-        {% if tem_permissao('gerir_turmas') %}<li class="nav-item"><a class="nav-link" href="{{ url_for('painel.unidades') }}">Unidades</a></li>{% endif %}
-        {% if tem_permissao('liberar_manual') %}<li class="nav-item"><a class="nav-link" href="{{ url_for('painel.recepcao') }}">Recepção</a></li>{% endif %}
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('painel.presenca') }}">Presença</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('pessoas.lista') }}">Pessoas</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('painel.turmas') }}">Turmas</a></li>
-        {% if tem_permissao('ver_relatorios') %}<li class="nav-item"><a class="nav-link" href="{{ url_for('painel.relatorios') }}">Relatórios</a></li>{% endif %}
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('dispositivos.lista') }}">Catracas</a></li>
-        {% if tem_permissao('gerir_usuarios') %}<li class="nav-item"><a class="nav-link" href="{{ url_for('auth.usuarios') }}">Usuários</a></li>{% endif %}
-        {% if tem_permissao('ver_auditoria') %}<li class="nav-item"><a class="nav-link" href="{{ url_for('painel.auditoria') }}">Auditoria</a></li>{% endif %}
-      </ul>
-      <span class="navbar-text me-3">
-        {% if unidade %}<a class="link-light" href="{{ url_for('painel.unidades') }}">{{ unidade.nome }}</a>{% else %}<a class="link-warning" href="{{ url_for('painel.unidades') }}">Escolher unidade</a>{% endif %}
-        · {{ usuario.nome }} <small class="text-secondary">({{ usuario.perfil }})</small>
-      </span>
-      <a class="btn btn-outline-light btn-sm me-2" href="{{ url_for('auth.trocar_senha') }}">Senha</a>
-      <a class="btn btn-outline-light btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
-    </div>
+{% set ep = request.endpoint or '' %}
+{% set args = request.args %}
+{% macro item(nome, url, ativo) -%}
+  <a class="nav-item {{ 'ativo' if ativo }}" href="{{ url }}">{{ nome }}</a>
+{%- endmacro %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="marca"><a href="{{ url_for('index') }}">Nexosix Acesso</a><small>{{ unidade.nome if unidade else 'Escolha uma escola' }}</small></div>
+
+    {% if tem_permissao('ver_presenca') and unidade %}
+    <div class="grupo">Operação</div>
+    {{ item('Agora', url_for('painel.dashboard'), ep == 'painel.dashboard') }}
+    {% if tem_permissao('liberar_manual') %}{{ item('Recepção', url_for('painel.recepcao'), ep in ['painel.recepcao', 'pessoas.visitante_novo']) }}{% endif %}
+    {{ item('Presença', url_for('painel.presenca'), ep == 'painel.presenca') }}
+    {% endif %}
+
+    {% if tem_permissao('cadastrar_pessoas') and unidade %}
+    <div class="grupo">Cadastro</div>
+    {{ item('Alunos', url_for('pessoas.lista', tipo='aluno'), ep.startswith('pessoas.') and args.get('tipo', 'aluno') == 'aluno' and not args.get('pendencia') and ep != 'pessoas.visitante_novo') }}
+    {{ item('Responsáveis', url_for('pessoas.lista', tipo='responsavel'), ep == 'pessoas.lista' and args.get('tipo') == 'responsavel') }}
+    {{ item('Funcionários', url_for('pessoas.lista', tipo='funcionario'), ep == 'pessoas.lista' and args.get('tipo') == 'funcionario') }}
+    {{ item('Turmas', url_for('painel.turmas'), ep == 'painel.turmas') }}
+    {{ item('Pendências', url_for('pessoas.lista', pendencia='foto'), ep == 'pessoas.lista' and args.get('pendencia')) }}
+    {% endif %}
+
+    {% if tem_permissao('ver_relatorios') and unidade %}
+    <div class="grupo">Relatórios</div>
+    {{ item('Frequência', url_for('painel.relatorios', tipo='frequencia'), ep == 'painel.relatorios' and args.get('tipo', 'frequencia') == 'frequencia') }}
+    {{ item('Atrasos', url_for('painel.relatorios', tipo='atrasos'), ep == 'painel.relatorios' and args.get('tipo') == 'atrasos') }}
+    {{ item('Saídas antecipadas', url_for('painel.relatorios', tipo='antecipadas'), ep == 'painel.relatorios' and args.get('tipo') == 'antecipadas') }}
+    {{ item('Acessos negados', url_for('painel.relatorios', tipo='negados'), ep == 'painel.relatorios' and args.get('tipo') == 'negados') }}
+    {% endif %}
+
+    {% if (tem_permissao('configurar_escola') or tem_permissao('ver_auditoria')) and unidade %}
+    <div class="grupo">Configuração</div>
+    {% if tem_permissao('configurar_escola') %}
+    {{ item('Escola', url_for('painel.unidade_config', unidade_id=unidade.id), ep == 'painel.unidade_config') }}
+    {{ item('Catraca', url_for('dispositivos.lista'), ep.startswith('dispositivos.')) }}
+    {{ item('Usuários do painel', url_for('auth.usuarios'), ep == 'auth.usuarios') }}
+    {% endif %}
+    {% if tem_permissao('ver_auditoria') %}{{ item('Auditoria', url_for('painel.auditoria'), ep == 'painel.auditoria') }}{% endif %}
+    {% endif %}
+
+    {% if usuario.perfil == 'superadmin' or (not usuario.unidade_id and tem_permissao('configurar_escola')) %}
+    <div class="grupo">{{ 'Nexosix' if usuario.perfil == 'superadmin' else 'Rede' }}</div>
+    {{ item('Clientes' if usuario.perfil == 'superadmin' else 'Todas as escolas', url_for('painel.rede'), ep == 'painel.rede') }}
+    {{ item('Escolas', url_for('painel.unidades'), ep == 'painel.unidades') }}
+    {% endif %}
+  </aside>
+
+  <div class="principal">
+    <header class="topo">
+      <div>
+        {% if escolas_visiveis|length > 1 %}
+        <div class="dropdown d-inline-block">
+          <a class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" href="#">{{ unidade.nome if unidade else 'Escolher escola' }}</a>
+          <ul class="dropdown-menu">{% for e in escolas_visiveis %}<li><a class="dropdown-item" href="{{ url_for('auth.trocar_unidade', unidade_id=e.id) }}">{{ e.nome }} <small class="text-muted">· {{ e.empresa }}</small></a></li>{% endfor %}</ul>
+        </div>
+        {% else %}<span class="fw-semibold">{{ unidade.nome if unidade else '' }}</span>{% endif %}
+      </div>
+      <div class="text-muted small">
+        {{ rotulo_perfil }} · {{ usuario.nome }}
+        <a class="btn btn-sm btn-outline-secondary ms-2" href="{{ url_for('auth.trocar_senha') }}">Senha</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('auth.logout') }}">Sair</a>
+      </div>
+    </header>
+    <main class="conteudo">
+      {% if modo == 'nuvem' and unidade and not (unidade.config or {}).get('agente_visto_em') %}
+        <div class="alert alert-danger py-2">O servidor da escola ({{ unidade.nome }}) ainda não se conectou — a catraca não recebe cadastros nem comandos até isso acontecer.{% if tem_permissao('configurar_escola') %} <a href="{{ url_for('painel.unidade_config', unidade_id=unidade.id) }}">Como instalar</a>.{% endif %}</div>
+      {% elif modo == 'nuvem' and unidade and ((unidade.config or {}).get('failover') or {}).get('ativo') %}
+        <div class="alert alert-danger py-2"><b>Redundância ativa:</b> o servidor da escola ({{ unidade.nome }}) parou de responder e a nuvem assumiu a catraca desde {{ (unidade.config.failover.desde or '')[:16]|replace('T', ' ') }} UTC. Fotos novas e comandos ficam na fila até o servidor voltar.</div>
+      {% endif %}
+      {% with msgs = get_flashed_messages(with_categories=true) %}
+        {% for cat, m in msgs %}<div class="alert alert-{{ cat }} py-2">{{ m }}</div>{% endfor %}
+      {% endwith %}
+      {% block conteudo %}{% endblock %}
+    </main>
   </div>
-</nav>
-{% endif %}
+</div>
+{% else %}
 <main class="container-fluid px-4">
-  {% if modo == 'nuvem' and unidade and not (unidade.config or {}).get('agente_visto_em') %}
-    <div class="alert alert-danger py-2">O servidor da escola ({{ unidade.nome }}) ainda não se conectou à nuvem — a catraca não recebe cadastros nem comandos até isso acontecer.</div>
-  {% elif modo == 'nuvem' and unidade and ((unidade.config or {}).get('failover') or {}).get('ativo') %}
-    <div class="alert alert-danger py-2"><b>Redundância ativa:</b> o servidor da escola ({{ unidade.nome }}) parou de responder e a nuvem assumiu a catraca desde {{ (unidade.config.failover.desde or '')[:16]|replace('T', ' ') }} UTC. Fotos novas e comandos ficam na fila até o servidor voltar.</div>
-  {% endif %}
   {% with msgs = get_flashed_messages(with_categories=true) %}
     {% for cat, m in msgs %}<div class="alert alert-{{ cat }} py-2">{{ m }}</div>{% endfor %}
   {% endwith %}
-  {% block conteudo %}{% endblock %}
+  {% block conteudo_deslogado %}{{ self.conteudo() }}{% endblock %}
 </main>
+{% endif %}
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 {% block scripts %}{% endblock %}
 </body>

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block conteudo %}
 <h3>Usuários do painel</h3>
+<p class="text-muted small">Secretaria cadastra alunos, responsáveis e turmas · Recepção libera e registra visitantes · Coordenação vê presença e relatórios · Direção configura tudo · Auditor só lê.</p>
 <div class="row">
   <div class="col-lg-8">
     <table class="table table-sm bg-white">
@@ -8,7 +9,7 @@
       <tbody>
       {% for u in usuarios %}
         <tr class="{{ 'text-muted' if not u.ativo }}">
-          <td>{{ u.nome }}</td><td>{{ u.email }}</td><td>{{ u.perfil }}</td><td>{{ u.unidade_nome or '— (toda a rede)' }}</td>
+          <td>{{ u.nome }}</td><td>{{ u.email }}</td><td>{{ rotulos.get(u.perfil, u.perfil) }}</td><td>{{ u.unidade_nome or '— (toda a rede)' }}</td>
           <td>{{ u.ultimo_login|data_hora }}</td>
           <td>{% if u.id != usuario.id %}<form method="post" action="{{ url_for('auth.usuario_ativo', uid=u.id) }}"><button class="btn btn-sm btn-outline-secondary">{{ 'Desativar' if u.ativo else 'Ativar' }}</button></form>{% endif %}</td>
         </tr>
@@ -24,10 +25,10 @@
         <input class="form-control mb-2" name="email" type="email" placeholder="E-mail" required>
         <input class="form-control mb-2" name="senha" type="password" placeholder="Senha inicial" minlength="8" required>
         <select class="form-select mb-2" name="perfil">
-          {% for p in perfis %}{% if p != 'superadmin' or usuario.perfil == 'superadmin' %}<option value="{{ p }}">{{ p }}</option>{% endif %}{% endfor %}
+          {% for p in perfis %}{% if p != 'superadmin' or usuario.perfil == 'superadmin' %}<option value="{{ p }}" {{ 'selected' if p == 'secretaria' }}>{{ rotulos[p] }}{% if p == 'admin_unidade' %} (direção/TI){% endif %}</option>{% endif %}{% endfor %}
         </select>
         <select class="form-select mb-2" name="unidade_id">
-          <option value="">Toda a rede (admin)</option>
+          <option value="">Toda a rede (direção da rede)</option>
           {% for un in unidades %}<option value="{{ un.id }}">{{ un.nome }}</option>{% endfor %}
         </select>
         <button class="btn btn-primary w-100">Criar</button>

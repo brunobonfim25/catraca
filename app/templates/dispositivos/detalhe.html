@@ -21,7 +21,7 @@
         <form method="post" action="{{ url_for('dispositivos.sincronizar_todos', dispositivo_id=d.id) }}"><button class="btn btn-sm btn-outline-secondary">Reenviar todo mundo</button></form>
         <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dispositivos.editar', dispositivo_id=d.id) }}">Editar</a>
       </div>
-      <div class="small text-muted mt-2">Comandos são executados pelo servidor da escola{% if agente_visto_em %} — agente visto em {{ agente_visto_em[:16]|replace('T',' ') }} UTC{% if agente.base_url %}, Monitor/Pro apontam para <code>{{ agente.base_url }}</code>{% endif %}{% elif modo == 'nuvem' %} — <b class="text-danger">agente ainda não se conectou</b>{% endif %}.</div>
+      <div class="small text-muted mt-2">Comandos são executados pelo servidor da escola{% if agente_visto_em %} — visto em {{ agente_visto_em[:16]|replace('T',' ') }} UTC{% if agente.base_url %}, Monitor/Pro apontam para <code>{{ agente.base_url }}</code>{% endif %}{% elif modo == 'nuvem' %} — <b class="text-danger">servidor da escola ainda não se conectou</b>{% endif %}.</div>
       {% endif %}
     </div></div>
 

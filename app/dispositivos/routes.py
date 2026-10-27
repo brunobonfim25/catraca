@@ -20,7 +20,7 @@ def _disp(dispositivo_id):
 
 
 @bp.get("/")
-@exige("ver_presenca")
+@exige("configurar_escola")  # a catraca é assunto da direção/TI; o resto vê o status dela no "Agora"
 def lista():
     un = unidade_atual_ou_403()
     return render_template("dispositivos/lista.html", dispositivos=service.listar(un["id"], apenas_ativos=False), fila=service.resumo_fila(un["id"]))
@@ -77,7 +77,7 @@ def editar(dispositivo_id):
 
 
 @bp.get("/<int:dispositivo_id>")
-@exige("ver_presenca")
+@exige("configurar_escola")
 def detalhe(dispositivo_id):
     un, d = _disp(dispositivo_id)
     leitores = db.query("SELECT * FROM dispositivo_leitores WHERE dispositivo_id = %s ORDER BY id", (dispositivo_id,))

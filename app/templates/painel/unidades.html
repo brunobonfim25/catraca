@@ -1,25 +1,27 @@
 {% extends "base.html" %}
+{% block titulo %}Escolas — Nexosix Acesso{% endblock %}
 {% block conteudo %}
-<h3>Unidades</h3>
+<h3>Escolas</h3>
+<p class="text-muted small">Cada cliente (rede) tem uma ou mais escolas. Tudo no sistema — alunos, catraca, turmas — pertence a uma escola.</p>
 <div class="row g-3">
   <div class="col-lg-7">
-    <table class="table bg-white"><thead><tr><th>Empresa</th><th>Unidade</th><th>Endereço</th><th></th></tr></thead><tbody>
-    {% for un in unidades %}<tr><td>{{ un.empresa }}</td><td>{{ un.nome }}</td><td><small>{{ un.endereco or '' }}</small></td><td><a class="btn btn-sm btn-primary" href="{{ url_for('auth.trocar_unidade', unidade_id=un.id) }}">Abrir</a> {% if tem_permissao('gerir_turmas') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('auth.trocar_unidade', unidade_id=un.id) }}?proximo=config">Config</a>{% endif %}</td></tr>
-    {% else %}<tr><td colspan="4" class="text-muted">Nenhuma unidade ainda.</td></tr>{% endfor %}
+    <table class="table bg-white"><thead><tr><th>Cliente (rede)</th><th>Escola</th><th>Endereço</th><th></th></tr></thead><tbody>
+    {% for un in unidades %}<tr><td>{{ un.empresa }}</td><td>{{ un.nome }}</td><td><small>{{ un.endereco or '' }}</small></td><td><a class="btn btn-sm btn-primary" href="{{ url_for('auth.trocar_unidade', unidade_id=un.id) }}">Abrir</a> {% if tem_permissao('configurar_escola') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('auth.trocar_unidade', unidade_id=un.id) }}?proximo=config">Configuração</a>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="4" class="text-muted">Nenhuma escola ainda.</td></tr>{% endfor %}
     </tbody></table>
   </div>
-  {% if tem_permissao('gerir_turmas') %}
+  {% if tem_permissao('configurar_escola') %}
   <div class="col-lg-5">
     {% if usuario.perfil == 'superadmin' %}
-    <div class="card mb-3" id="nova-empresa"><div class="card-body"><h6>Novo colégio / rede de escolas (empresa)</h6>
-      <p class="small text-muted mb-2">Cada cliente é uma empresa; as escolas dele são unidades dentro dela.</p>
+    <div class="card mb-3" id="nova-empresa"><div class="card-body"><h6>Novo cliente (rede de escolas)</h6>
+      <p class="small text-muted mb-2">Um colégio com uma escola só também é um cliente — crie a rede e depois a escola dele.</p>
       <form method="post" action="{{ url_for('painel.empresa_nova') }}" class="d-flex gap-2"><input class="form-control" name="nome" placeholder="ex. Grupo Educacional Professor Pica Pau" required><button class="btn btn-outline-primary">Criar</button></form>
     </div></div>
     {% endif %}
-    <div class="card" id="nova-unidade"><div class="card-body"><h6>Nova unidade (escola)</h6>
+    <div class="card" id="nova-unidade"><div class="card-body"><h6>Nova escola</h6>
       <form method="post" action="{{ url_for('painel.unidade_nova') }}">
-        {% if usuario.perfil == 'superadmin' %}<select class="form-select mb-2" name="empresa_id" required>{% for e in empresas %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}</select>{% endif %}
-        <input class="form-control mb-2" name="nome" placeholder="ex. Recreio" required>
+        {% if usuario.perfil == 'superadmin' %}<label class="form-label small mb-1">Cliente</label><select class="form-select mb-2" name="empresa_id" required>{% for e in empresas %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}</select>{% endif %}
+        <input class="form-control mb-2" name="nome" placeholder="Nome da escola, ex. Recreio" required>
         <input class="form-control mb-2" name="endereco" placeholder="Endereço">
         <select class="form-select mb-2" name="fuso">{% for k, v in fusos %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
         <button class="btn btn-primary">Criar e abrir</button>

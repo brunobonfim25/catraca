@@ -59,8 +59,11 @@ def create_app(config_object=None):
     def index():
         if modo == "local":
             return redirect(url_for("espelho.agente_status"))
-        if session.get("usuario_id"):
-            return redirect(url_for("painel.dashboard"))
+        from .auth.rbac import carregar_usuario, home_de
+
+        u = carregar_usuario()
+        if u:
+            return redirect(home_de(u))
         return redirect(url_for("auth.login"))
 
     @app.route("/health")

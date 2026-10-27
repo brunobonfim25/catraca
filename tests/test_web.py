@@ -163,3 +163,31 @@ def test_ativacao_pelo_link_da_escola_com_telefone(cliente, seed):
     assert cliente.get("/telegram/escola/1/qr.png").content_type == "image/png"
     assert "?start=u1" in cliente.get("/unidades/1/config").get_data(as_text=True)
     assert "Ana Silva" not in cliente.get("/pessoas/?tipo=responsavel&pendencia=telegram").get_data(as_text=True)
+
+
+def test_perfil_secretaria_cai_no_cadastro_e_nao_configura_a_escola(app, seed):
+    """Fase 1 da reorganização: cada papel abre na sua tela e a secretaria mexe em cadastro
+    e turmas, nunca em escola/catraca/usuários (isso é da direção)."""
+    from werkzeug.security import generate_password_hash
+
+    with app.app_context():
+        db.execute(
+            "INSERT INTO usuarios_admin (empresa_id, unidade_id, nome, email, senha_hash, perfil) VALUES (%s,%s,'Sec','sec@teste.com',%s,'secretaria')",
+            (seed["unidade"]["empresa_id"], seed["unidade"]["id"], generate_password_hash("senha123")),
+        )
+    c = app.test_client()
+    r = c.post("/login", data={"email": "sec@teste.com", "senha": "senha123"})
+    assert r.headers["Location"].endswith("/pessoas/?tipo=aluno")
+    assert c.get("/").headers["Location"].endswith("/pessoas/?tipo=aluno")
+    html = c.get("/pessoas/?tipo=aluno").get_data(as_text=True)
+    assert "<h3 class=\"mb-0\">Alunos</h3>" in html and "+ Novo aluno" in html
+    assert "Configuração" not in html.split("<main")[0]  # menu lateral não oferece o que ela não pode
+    assert c.get("/turmas").status_code == 200
+    assert c.get(f"/unidades/{seed['unidade']['id']}/config").status_code == 403
+    assert c.get("/dispositivos/").status_code == 403
+    assert c.get("/usuarios").status_code == 403
+    # recepção abre direto na Recepção; direção, no Agora
+    c2 = app.test_client()
+    assert c2.post("/login", data={"email": "recepcao@teste.com", "senha": "senha123"}).headers["Location"].endswith("/painel/recepcao")
+    c3 = app.test_client()
+    assert c3.post("/login", data={"email": "admin@teste.com", "senha": "senha123"}).headers["Location"].endswith("/painel")
