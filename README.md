@@ -45,14 +45,17 @@ na catraca: [`integrations/controlid/README.md`](integrations/controlid/README.m
 
 ## Nuvem (Railway)
 
+Em produção desde 27/10/2026: projeto `nexosix-acesso` (região us-east4), painel em
+`https://web-production-199c9.up.railway.app`. Empresa 1 = GEPPP, unidade 1 = Recreio.
+
 Três serviços: **PostgreSQL**, **web** (`railway.json`: bootstrap + gunicorn) e **worker**
 (`python -m worker.main` — Telegram, LGPD, limpeza). Variáveis: `MODO=nuvem`, `DATABASE_URL`,
 `SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_SENHA`, `BASE_URL` (URL pública), `TELEGRAM_BOT_TOKEN`,
 `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`. `git push origin main` faz o deploy.
 Depois do primeiro deploy: `flask --app wsgi telegram-webhook`.
 
-Para cada escola: painel → Unidades → criar; shell do Railway:
-`flask --app wsgi token-espelho --unidade-id <id>` → `ESPELHO_TOKEN` para o agente.
+Para cada escola: painel → Unidades → criar → Config da unidade → **Gerar token do agente**
+(aparece uma vez; vai em `ESPELHO_TOKEN` no `.env` do agente, com `UNIDADE_ID` = id da unidade).
 
 **Redundância por DNS** (opcional, recomendada): domínio na Cloudflare; na nuvem
 `CLOUDFLARE_API_TOKEN` (Zone.DNS:Edit), `CLOUDFLARE_ZONE_ID`, `FAILOVER_NUVEM_ALVO` (host do
