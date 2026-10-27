@@ -47,12 +47,23 @@ def enviar(chat_id, texto, token=None, reply_markup=None):
     return dados
 
 
+ATUALIZACOES = ["message", "callback_query"]
+
+
 def registrar_webhook():
-    token = _cfg("TELEGRAM_BOT_TOKEN")
-    url = f"{_cfg('BASE_URL')}/api/telegram/webhook"
-    r = requests.post(API.format(token=token, metodo="setWebhook"),
-                      json={"url": url, "secret_token": _cfg("TELEGRAM_WEBHOOK_SECRET"), "allowed_updates": ["message", "callback_query"]}, timeout=10)
-    return r.json()
+    """Registra BASE_URL/api/telegram/webhook e confere no getWebhookInfo se o Telegram vai
+    mandar os cliques dos botões (callback_query). Em 27/10 o setWebhook respondeu "already
+    set" sem dizer se trocou a lista — por isso a conferência, e o recadastro se faltar."""
+    corpo = {"url": f"{_cfg('BASE_URL')}/api/telegram/webhook", "secret_token": _cfg("TELEGRAM_WEBHOOK_SECRET"),
+             "allowed_updates": ATUALIZACOES}
+    _chamar("setWebhook", corpo)
+    info = _chamar("getWebhookInfo", {}).get("result") or {}
+    if set(ATUALIZACOES) - set(info.get("allowed_updates") or ["message"]):
+        _chamar("deleteWebhook", {"drop_pending_updates": False})
+        _chamar("setWebhook", corpo)
+        info = _chamar("getWebhookInfo", {}).get("result") or {}
+    return {"url_ok": info.get("url") == corpo["url"], "allowed_updates": info.get("allowed_updates"),
+            "pendentes": info.get("pending_update_count"), "ultimo_erro": info.get("last_error_message")}
 
 
 # ---------------------------------------------------------------- ativação

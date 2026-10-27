@@ -79,17 +79,32 @@ def test_clique_de_outra_pessoa_ou_grupo_nao_vale(seed):
     assert "expirou" in telegram.processar_update(_clique(906, "tudo"))["texto"]  # chat sem pedido pendente
 
 
-def test_webhook_registra_botoes(monkeypatch, app):
-    enviado = {}
+def test_webhook_registra_botoes_e_confere(monkeypatch, app):
+    chamadas = []
+    info = {"url": "", "allowed_updates": ["message"]}
 
     class R:
         ok, content = True, b"x"
 
+        def __init__(self, dados):
+            self.dados = dados
+
         def json(self):
-            return {"ok": True}
+            return self.dados
+
+    def post(url, json, timeout):
+        metodo = url.rsplit("/", 1)[1]
+        chamadas.append(metodo)
+        if metodo == "setWebhook" and chamadas.count("deleteWebhook"):
+            info.update(url=json["url"], allowed_updates=json["allowed_updates"])  # só "pega" depois do delete
+        if metodo == "getWebhookInfo":
+            return R({"ok": True, "result": dict(info)})
+        return R({"ok": True, "result": True})
 
     monkeypatch.setitem(app.config, "TELEGRAM_BOT_TOKEN", "t")
-    monkeypatch.setattr(telegram.requests, "post", lambda url, json, timeout: enviado.update(json) or R())
+    monkeypatch.setitem(app.config, "BASE_URL", "https://exemplo.com")
+    monkeypatch.setattr(telegram.requests, "post", post)
     with app.app_context():
-        telegram.registrar_webhook()
-    assert enviado["allowed_updates"] == ["message", "callback_query"]
+        r = telegram.registrar_webhook()
+    assert chamadas == ["setWebhook", "getWebhookInfo", "deleteWebhook", "setWebhook", "getWebhookInfo"]
+    assert r["allowed_updates"] == ["message", "callback_query"] and r["url_ok"]
