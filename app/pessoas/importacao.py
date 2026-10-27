@@ -21,7 +21,7 @@ from datetime import date, datetime
 from .. import db
 from ..auditoria import auditar
 from ..dispositivos import service as dispositivos
-from ..util import mesmo_telefone, normalizar_telefone
+from ..util import hoje_local, mesmo_telefone, normalizar_telefone
 from . import service
 
 MAX_BYTES = 5 * 1024 * 1024
@@ -239,12 +239,23 @@ def turno_de(texto):
     return TURNOS.get(_norm(texto))
 
 
-def _mesmo_resp(a, b):
-    if a["telefone"] and b["telefone"]:
-        return mesmo_telefone(a["telefone"], b["telefone"])
-    if a["email"] and b["email"] and a["email"] == b["email"]:
+def _primeiro(nome):
+    partes = _norm(nome).split()
+    return partes[0] if partes else ""
+
+
+def _mesmo_resp(a, b, por_nome=True):
+    """Mesma pessoa? Revisão (A4): nomes diferentes NUNCA são a mesma pessoa — pai e mãe com o
+    mesmo celular viravam um só (e o pai não conseguia retirar o filho). Com o mesmo contato,
+    só junta se o primeiro nome bate. `por_nome`: só o nome basta (dentro do MESMO aluno);
+    entre alunos diferentes, duas "Ana Paula Rocha" são de famílias diferentes."""
+    if _norm(a["nome"]) == _norm(b["nome"]) and por_nome:
         return True
-    return _norm(a["nome"]) == _norm(b["nome"])
+    if _primeiro(a["nome"]) != _primeiro(b["nome"]):
+        return False
+    if a["telefone"] and b["telefone"] and mesmo_telefone(a["telefone"], b["telefone"]):
+        return True
+    return bool(a["email"] and b["email"] and a["email"] == b["email"])
 
 
 def processar(linhas, mapa, linha_inicial=2):
@@ -292,11 +303,12 @@ def processar(linhas, mapa, linha_inicial=2):
         reg = por_chave.get(chave)
         if reg is None:
             reg = {"linhas": [n], "aluno": {"nome": nome, "turma": turma, "turno": turno, "matricula": matricula},
-                   "responsaveis": [], "erros": [], "avisos": []}
+                   "responsaveis": [], "erros": [], "avisos": [], "resp_por_linha": [len(resps)]}
             por_chave[chave] = reg
             registros.append(reg)
         else:
             reg["linhas"].append(n)
+            reg["resp_por_linha"].append(len(resps))
             reg["aluno"]["turno"] = reg["aluno"]["turno"] or turno
         reg["avisos"] += avisos
         for r in resps:
@@ -307,6 +319,18 @@ def processar(linhas, mapa, linha_inicial=2):
             else:
                 reg["responsaveis"].append(r)
     for reg in registros:
+        if len(reg["linhas"]) > 1 and not reg["aluno"].get("matricula") and not reg["erros"]:
+            # Revisão (A3): sem matrícula, duas "Maria Souza" no Pré 2 viravam uma só — a mãe de
+            # uma recebia os avisos da outra e podia retirá-la. Só junta como "uma linha por
+            # responsável" quando cada linha traz um responsável só; senão é homônimo: erro.
+            if any(n_resp != 1 for n_resp in reg.pop("resp_por_linha")):
+                reg["erros"].append(f"dois alunos com o mesmo nome na turma {reg['aluno']['turma']} (linhas {', '.join(map(str, reg['linhas']))}): "
+                                    "informe a matrícula para diferenciar")
+                reg["responsaveis"] = []
+            else:
+                reg["avisos"].append(f"linhas {', '.join(map(str, reg['linhas']))} juntadas como o mesmo aluno (um responsável por linha); "
+                                     "se forem alunos diferentes, informe a matrícula")
+        reg.pop("resp_por_linha", None)
         if len(reg["responsaveis"]) > SLOTS:
             reg["avisos"].append(f"mais de {SLOTS} responsáveis — importados só os {SLOTS} primeiros")
             del reg["responsaveis"][SLOTS:]
@@ -329,21 +353,35 @@ def planejar(unidade_id, registros):
         "WHERE p.unidade_id = %s AND p.status <> 'desligado'", (unidade_id,),
     )
     por_matricula = {a["matricula"].strip().lower(): a for a in alunos if a["matricula"]}
-    por_nome_turma = {(_norm(a["nome"]), a["turma_id"]): a for a in alunos}
+    por_nome_turma, homonimos = {}, set()
+    for a in alunos:
+        k = (_norm(a["nome"]), a["turma_id"])
+        if k in por_nome_turma:
+            homonimos.add(k)  # já há dois com esse nome na turma: casar pelo nome seria um chute
+        por_nome_turma[k] = a
     resps = db.query(
         "SELECT r.id, r.telefone, r.email, p.nome FROM responsaveis r JOIN pessoas p ON p.id = r.pessoa_id "
         "WHERE p.unidade_id = %s AND p.status <> 'desligado'", (unidade_id,),
     )
-    por_tel = {}
+    # Índices (A12): antes cada linha varria a lista inteira — 50 s com 5 mil linhas só na prévia
+    por_tel, por_email = {}, {}
     for r in resps:
         if _chave_tel(r["telefone"]):
-            por_tel.setdefault(_chave_tel(r["telefone"]), r)
-    por_email = {r["email"].lower(): r for r in resps if r["email"]}
+            por_tel.setdefault(_chave_tel(r["telefone"]), []).append(r)
+        if r["email"]:
+            por_email.setdefault(r["email"].lower(), []).append(r)
     resp_por_id = {r["id"]: r for r in resps}
     vinculos = {(v["aluno_id"], v["responsavel_id"]) for v in db.query(
         "SELECT ar.aluno_id, ar.responsavel_id FROM aluno_responsavel ar JOIN alunos a ON a.id = ar.aluno_id "
         "JOIN pessoas p ON p.id = a.pessoa_id WHERE p.unidade_id = %s", (unidade_id,))}
     n_vinculos = Counter(a for a, _ in vinculos)
+    resps_do_aluno = {}
+    for aid, rid in vinculos:
+        resps_do_aluno.setdefault(aid, []).append(rid)
+    novos_por_tel, novos_por_email = {}, {}
+
+    def _compativel(lista, r):
+        return next((x for x in lista or [] if _primeiro(x["nome"]) == _primeiro(r["nome"])), None)
 
     plano = {"turmas_novas": {}, "responsaveis_novos": [], "itens": [], "erros": [], "avisos": []}
     existentes_usados = set()
@@ -363,27 +401,42 @@ def planejar(unidade_id, registros):
             turma_ref, turma_id = ("nova", chave_turma), None
         existente = por_matricula.get(al["matricula"].lower()) if al["matricula"] else None
         if not existente and turma_id:
+            if (_norm(al["nome"]), turma_id) in homonimos:
+                plano["erros"].append({"linhas": reg["linhas"], "aluno": al["nome"],
+                                       "erros": [f"já existem dois alunos “{al['nome']}” na turma {al['turma']}: informe a matrícula"]})
+                continue
             existente = por_nome_turma.get((_norm(al["nome"]), turma_id))
         item = {"linhas": reg["linhas"], "aluno_nome": al["nome"], "turma_nome": al["turma"], "matricula": al["matricula"],
                 "turma": turma_ref, "aluno": existente, "muda_turma": bool(existente and existente["turma_id"] != turma_id),
                 "responsaveis": []}
         ja_tem = n_vinculos[existente["id"]] if existente else 0
         for r in reg["responsaveis"]:
-            achado = por_tel.get(_chave_tel(r["telefone"])) if r["telefone"] else None
+            # mesmo contato E primeiro nome compatível (pai e mãe podem dividir o celular)
+            achado = _compativel(por_tel.get(_chave_tel(r["telefone"])), r) if r["telefone"] else None
             if not achado and r["email"]:
-                achado = por_email.get(r["email"])
+                achado = _compativel(por_email.get(r["email"]), r)
             if not achado and existente:  # mesmo nome já vinculado a este aluno (planilha sem celular)
-                achado = next((resp_por_id[rid] for (aid, rid) in vinculos if aid == existente["id"] and _norm(resp_por_id.get(rid, {}).get("nome")) == _norm(r["nome"])), None)
+                achado = next((resp_por_id[rid] for rid in resps_do_aluno.get(existente["id"], []) if _norm(resp_por_id.get(rid, {}).get("nome")) == _norm(r["nome"])), None)
             if achado:
                 ref = ("id", achado["id"])
                 existentes_usados.add(achado["id"])
                 completar = {c: r[c] for c in ("telefone", "email") if r[c] and not achado[c]}
                 novo_vinculo = not existente or (existente["id"], achado["id"]) not in vinculos
             else:
-                k = next((i for i, x in enumerate(plano["responsaveis_novos"]) if _mesmo_resp(r, x)), None)
+                # novo responsável que já apareceu noutra linha (irmão): só pelo contato, nunca só
+                # pelo nome — duas "Ana Paula Rocha" de famílias diferentes viravam uma pessoa
+                k = None
+                if r["telefone"]:
+                    k = next((i for i in novos_por_tel.get(_chave_tel(r["telefone"]), []) if _mesmo_resp(r, plano["responsaveis_novos"][i], por_nome=False)), None)
+                if k is None and r["email"]:
+                    k = next((i for i in novos_por_email.get(r["email"], []) if _mesmo_resp(r, plano["responsaveis_novos"][i], por_nome=False)), None)
                 if k is None:
                     plano["responsaveis_novos"].append(dict(r))
                     k = len(plano["responsaveis_novos"]) - 1
+                    if r["telefone"]:
+                        novos_por_tel.setdefault(_chave_tel(r["telefone"]), []).append(k)
+                    if r["email"]:
+                        novos_por_email.setdefault(r["email"], []).append(k)
                 ref, completar, novo_vinculo = ("novo", k), {}, True
             if any(x["ref"] == ref for x in item["responsaveis"]):
                 continue
@@ -448,8 +501,10 @@ def executar(unidade_id, registros, consentimento=None):
                 if r["vinculo_novo"]:
                     service.vincular(aluno_id, resp_id, r["parentesco"] or None)
         if consentimento:
+            un = db.query("SELECT fuso FROM unidades WHERE id = %s", (unidade_id,), one=True)
+            hoje = hoje_local(un["fuso"])
             for pessoa_id in novas_pessoas:
-                service.registrar_consentimento(pessoa_id, consentimento["assinado_por"], date.today(), observacao=consentimento.get("observacao"),
+                service.registrar_consentimento(pessoa_id, consentimento["assinado_por"], hoje, observacao=consentimento.get("observacao"),
                                                 canal="importacao")
     return plano["resumo"]
 

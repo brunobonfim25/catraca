@@ -9,6 +9,13 @@ def _clique(chat, opcao, de=None):
                                "message": {"message_id": 1, "chat": {"id": chat}}}}
 
 
+def _abrir(chat, token, tel):
+    """Link individual: o bot pede o telefone (A5) e só então mostra a autorização."""
+    r = telegram.processar_update({"message": {"chat": {"id": chat}, "text": f"/start {token}"}})
+    assert r["reply_markup"]["keyboard"][0][0]["request_contact"]
+    return telegram.processar_update({"message": {"chat": {"id": chat}, "from": {"id": chat}, "contact": {"user_id": chat, "phone_number": "+55" + tel}}})
+
+
 def _novo_aluno_com_mae(seed, nome="Bia Nova", mae="Carla Nova", tel="21988880001"):
     un = seed["unidade"]["id"]
     aluno_pid, aluno_id = pessoas.criar_aluno(un, nome, seed["turma"]["id"])
@@ -21,7 +28,7 @@ def _novo_aluno_com_mae(seed, nome="Bia Nova", mae="Carla Nova", tel="2198888000
 def test_autoriza_tudo_registra_prova_e_ativa(seed):
     aluno_pid, mae_pid, rid, token = _novo_aluno_com_mae(seed)
     assert pessoas.situacao_alunos(seed["unidade"]["id"])[aluno_pid]["chave"] == "falta_autorizacao"
-    pergunta = telegram.processar_update({"message": {"chat": {"id": 900}, "text": f"/start {token}"}})
+    pergunta = _abrir(900, token, "21988880001")
     botoes = [b[0]["callback_data"] for b in pergunta["reply_markup"]["inline_keyboard"]]
     assert botoes == ["lgpd:tudo", "lgpd:avisos", "lgpd:nao"] and "Bia" in pergunta["texto"]
     resposta = telegram.processar_update(_clique(900, "tudo"))
@@ -40,15 +47,15 @@ def test_autoriza_tudo_registra_prova_e_ativa(seed):
 
 def test_so_avisos_ativa_sem_foto_e_nao_autoriza_nada(seed):
     aluno_pid, mae_pid, rid, token = _novo_aluno_com_mae(seed)
-    telegram.processar_update({"message": {"chat": {"id": 901}, "text": f"/start {token}"}})
+    _abrir(901, token, "21988880001")
     assert "entrar e sair pela recepção" in telegram.processar_update(_clique(901, "avisos"))["texto"]
     assert db.query("SELECT telegram_chat_id FROM responsaveis WHERE id = %s", (rid,), one=True)["telegram_chat_id"] == 901
     assert not pessoas.tem_consentimento(aluno_pid)
     assert pessoas.situacao_alunos(seed["unidade"]["id"])[aluno_pid]["chave"] == "foto_recusada"
 
     aluno2, _, rid2, token2 = _novo_aluno_com_mae(seed, "Leo Outro", "Paula Outra", "21977770002")
-    telegram.processar_update({"message": {"chat": {"id": 902}, "text": f"/start {token2}"}})
-    assert "Nada foi ativado" in telegram.processar_update(_clique(902, "nao"))["texto"]
+    _abrir(902, token2, "21977770002")
+    assert "avisos ficam desligados" in telegram.processar_update(_clique(902, "nao"))["texto"]
     r = db.query("SELECT telegram_chat_id, telegram_token FROM responsaveis WHERE id = %s", (rid2,), one=True)
     assert r["telegram_chat_id"] is None and r["telegram_token"] == token2  # pode mudar de ideia pelo mesmo link
     assert db.query("SELECT count(*) AS n FROM consentimentos_lgpd WHERE responsavel_id = %s AND NOT aceito", (rid2,), one=True)["n"] == 3
@@ -59,9 +66,9 @@ def test_basta_um_dos_pais_e_recusa_nova_do_mesmo_vence(seed):
     un = seed["unidade"]["id"]
     _, pai_rid = pessoas.criar_responsavel(un, "Pai Novo", "21966660003")
     pessoas.vincular(db.query("SELECT id FROM alunos WHERE pessoa_id = %s", (aluno_pid,), one=True)["id"], pai_rid, "pai")
-    telegram.processar_update({"message": {"chat": {"id": 903}, "text": f"/start {token}"}})
+    _abrir(903, token, "21988880001")
     telegram.processar_update(_clique(903, "avisos"))           # mãe: sem foto
-    telegram.processar_update({"message": {"chat": {"id": 904}, "text": f"/start {telegram.gerar_token(pai_rid)}"}})
+    _abrir(904, telegram.gerar_token(pai_rid), "21966660003")
     telegram.processar_update(_clique(904, "tudo"))             # pai: autoriza
     assert pessoas.tem_consentimento(aluno_pid)                 # um dos pais basta
     # o pai muda de ideia (secretaria registra pelo bot de novo): a recusa mais nova dele vence
@@ -72,7 +79,7 @@ def test_basta_um_dos_pais_e_recusa_nova_do_mesmo_vence(seed):
 
 def test_clique_de_outra_pessoa_ou_grupo_nao_vale(seed):
     aluno_pid, _, rid, token = _novo_aluno_com_mae(seed)
-    telegram.processar_update({"message": {"chat": {"id": 905}, "text": f"/start {token}"}})
+    _abrir(905, token, "21988880001")
     r = telegram.processar_update(_clique(905, "tudo", de=999))  # chat ≠ quem clicou (grupo)
     assert r["texto"] is None
     assert not pessoas.tem_consentimento(aluno_pid)

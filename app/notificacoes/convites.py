@@ -172,6 +172,14 @@ def enviar_pendentes(limite=30, enviar=None):
             enviados += 1
         except Exception as e:  # noqa: BLE001 — provedor fora/cota: tenta de novo mais tarde
             falhas += 1
+            if getattr(e, "cota", False):
+                # Revisão (A19): a cota do dia virava erro permanente e os convites acima de 300
+                # nunca saíam. Fica pra amanhã cedo, sem gastar tentativa — e o resto do lote também.
+                db.execute("UPDATE convites SET erro = %s, tentativas = GREATEST(tentativas - 1, 0), "
+                           "proximo_em = date_trunc('day', now()) + interval '1 day 6 hours' WHERE status = 'pendente' AND canal = 'email'",
+                           (f"cota diária do e-mail: sai amanhã ({str(e)[:200]})",))
+                log.warning("cota diária de e-mail estourada: convites ficam para amanhã")
+                break
             definitivo = c["tentativas"] >= MAX_TENTATIVAS or "não configurado" in str(e)
             if definitivo:
                 db.execute("UPDATE convites SET status = 'erro', erro = %s WHERE id = %s", (str(e)[:300], c["id"]))

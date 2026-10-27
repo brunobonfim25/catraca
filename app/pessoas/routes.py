@@ -1,6 +1,5 @@
 """Telas da secretaria: alunos, responsáveis, funcionários, visitantes, foto por webcam."""
 import base64
-from datetime import date
 
 from flask import Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, url_for
 
@@ -75,7 +74,7 @@ def aluno_novo():
             turma = da_unidade("turma", f["turma_id"])
             pessoa_id, _ = service.criar_aluno(un["id"], f["nome"], turma["id"], f.get("matricula"), _tri(f.get("saida_autonoma")), f.get("documento"))
             if f.get("consentimento_por"):
-                service.registrar_consentimento(pessoa_id, f["consentimento_por"], date.today())
+                service.registrar_consentimento(pessoa_id, f["consentimento_por"], hoje_local(un["fuso"]))
             flash("Aluno cadastrado. Agora tire a foto.", "success")
             return redirect(url_for("pessoas.foto", pessoa_id=pessoa_id))
     return render_template("pessoas/aluno_form.html", p=None, turmas=_turmas(un["id"]))
@@ -109,7 +108,7 @@ def responsavel_novo():
         else:
             pessoa_id, resp_id = service.criar_responsavel(un["id"], f["nome"], f.get("telefone"), f.get("documento"), f.get("email"))
             if f.get("consentimento_por"):
-                service.registrar_consentimento(pessoa_id, f["consentimento_por"], date.today())
+                service.registrar_consentimento(pessoa_id, f["consentimento_por"], hoje_local(un["fuso"]))
             if f.get("aluno_id"):
                 service.vincular(da_unidade("aluno", f["aluno_id"])["id"], resp_id, f.get("parentesco"), f.get("regra") or "sempre", [int(d) for d in f.getlist("dias")])
             flash("Responsável cadastrado. Agora tire a foto.", "success")
@@ -151,7 +150,7 @@ def funcionario_novo():
         f = request.form
         pessoa_id, _ = service.criar_funcionario(un["id"], f["nome"], f.get("cargo"), _escala_do_form(f), f.get("documento"))
         if f.get("consentimento_por"):
-            service.registrar_consentimento(pessoa_id, f["consentimento_por"], date.today())
+            service.registrar_consentimento(pessoa_id, f["consentimento_por"], hoje_local(un["fuso"]))
         flash("Funcionário cadastrado. Agora tire a foto.", "success")
         return redirect(url_for("pessoas.foto", pessoa_id=pessoa_id))
     return render_template("pessoas/funcionario_form.html", p=None, dias=DIAS)
@@ -280,10 +279,10 @@ def apagar_foto(pessoa_id):
 @bp.post("/<int:pessoa_id>/consentimento")
 @exige("cadastrar_pessoas")
 def consentimento(pessoa_id):
-    _pessoa_da_unidade(pessoa_id)
+    un, _ = _pessoa_da_unidade(pessoa_id)
     f = request.form
     arq = request.files.get("arquivo")
-    service.registrar_consentimento(pessoa_id, f["assinado_por"], f.get("assinado_em") or date.today(),
+    service.registrar_consentimento(pessoa_id, f["assinado_por"], f.get("assinado_em") or hoje_local(un["fuso"]),
                                     arq.filename if arq and arq.filename else None, arq.read() if arq and arq.filename else None, f.get("observacao"))
     flash("Consentimento registrado", "success")
     return redirect(url_for("pessoas.detalhe", pessoa_id=pessoa_id))
@@ -295,14 +294,17 @@ def consentimento(pessoa_id):
 @exige("cadastrar_pessoas")
 def foto(pessoa_id):
     un, p = _pessoa_da_unidade(pessoa_id)
-    return render_template("pessoas/foto.html", p=p, consentimento=service.tem_consentimento(pessoa_id))
+    return render_template("pessoas/foto.html", p=p, consentimento=service.tem_consentimento(pessoa_id) or not service.precisa_consentimento(p))
 
 
 @bp.post("/<int:pessoa_id>/foto")
 @exige("cadastrar_pessoas")
 def foto_salvar(pessoa_id):
     """Recebe {"imagem": "data:image/jpeg;base64,..."} da webcam."""
-    _pessoa_da_unidade(pessoa_id)
+    _, p = _pessoa_da_unidade(pessoa_id)
+    if service.precisa_consentimento(p) and not service.tem_consentimento(pessoa_id):
+        # S10: sem autorização dos pais a foto (biométrica) não é aceita
+        return jsonify({"ok": False, "erro": "Falta autorização dos pais para a foto. Registre o termo assinado ou peça para o responsável autorizar pelo Telegram."}), 409
     dados = request.get_json(silent=True) or {}
     imagem = dados.get("imagem") or ""
     if "," in imagem:

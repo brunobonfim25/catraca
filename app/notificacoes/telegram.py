@@ -2,7 +2,6 @@
 import io
 import logging
 import secrets
-from datetime import date
 
 import requests
 from flask import current_app
@@ -25,12 +24,24 @@ def _cfg(chave):
 
 
 def enfileirar(unidade_id, responsavel_id, texto, evento_id=None):
-    r = db.query("SELECT telegram_chat_id FROM responsaveis WHERE id = %s", (responsavel_id,), one=True)
-    status = "pendente" if r and r["telegram_chat_id"] else "sem_chat"
+    """Sempre 'pendente': quem decide o chat é a nuvem, na hora do envio. Revisão (A1): o PC
+    da escola decidia "sem chat" pela cópia dele, que não sabia das ativações feitas no bot
+    (elas acontecem na nuvem) — os pais ativavam e nenhum aviso saía."""
     return db.execute(
-        "INSERT INTO fila_notificacao (unidade_id, responsavel_id, evento_id, texto, status) VALUES (%s,%s,%s,%s,%s) RETURNING id",
-        (unidade_id, responsavel_id, evento_id, texto, status), returning=True,
+        "INSERT INTO fila_notificacao (unidade_id, responsavel_id, evento_id, texto, status) VALUES (%s,%s,%s,%s,'pendente') RETURNING id",
+        (unidade_id, responsavel_id, evento_id, texto), returning=True,
     )["id"]
+
+
+class TelegramErro(RuntimeError):
+    def __init__(self, status, descricao, retry_after=None):
+        super().__init__(f"Telegram {status}: {descricao}")
+        self.status, self.descricao, self.retry_after = status, descricao or "", retry_after
+
+    @property
+    def bloqueado(self):
+        """403: o responsável bloqueou o bot ou apagou a conta — repetir não adianta."""
+        return self.status == 403
 
 
 def enviar(chat_id, texto, token=None, reply_markup=None):
@@ -41,9 +52,13 @@ def enviar(chat_id, texto, token=None, reply_markup=None):
     if reply_markup:
         corpo["reply_markup"] = reply_markup
     r = requests.post(API.format(token=token, metodo="sendMessage"), json=corpo, timeout=10)
-    dados = r.json() if r.content else {}
+    try:
+        dados = r.json() if r.content else {}
+    except ValueError:
+        dados = {}
     if not r.ok or not dados.get("ok"):
-        raise RuntimeError(f"Telegram {r.status_code}: {dados.get('description') or r.text[:120]}")
+        # 429 traz parameters.retry_after: o Telegram diz quanto esperar
+        raise TelegramErro(r.status_code, dados.get("description") or r.text[:120], (dados.get("parameters") or {}).get("retry_after"))
     return dados
 
 
@@ -68,9 +83,12 @@ def registrar_webhook():
 
 # ---------------------------------------------------------------- ativação
 
+TOKEN_VALIDADE_DIAS = 30
+
+
 def gerar_token(responsavel_id):
     token = secrets.token_urlsafe(12)
-    db.execute("UPDATE responsaveis SET telegram_token = %s WHERE id = %s", (token, responsavel_id))
+    db.execute("UPDATE responsaveis SET telegram_token = %s, telegram_token_em = now() WHERE id = %s", (token, responsavel_id))
     return token
 
 
@@ -139,8 +157,10 @@ def _nomes_alunos(responsaveis):
 
 def achar_por_token(token):
     """Link individual (/start <token>). Não ativa nada: a ativação vem depois da autorização."""
+    # Revisão (A5): o link valia pra sempre — encaminhado no grupo da turma, qualquer um ativava
     return db.query("SELECT r.*, p.nome, p.unidade_id FROM responsaveis r JOIN pessoas p ON p.id = r.pessoa_id "
-                    "WHERE r.telegram_token = %s AND p.status <> 'desligado'", (token,), one=True)
+                    "WHERE r.telegram_token = %s AND p.status <> 'desligado' "
+                    "AND coalesce(r.telegram_token_em, now()) > now() - make_interval(days => %s)", (token, TOKEN_VALIDADE_DIAS), one=True)
 
 
 def achar_por_telefone(telefone):
@@ -174,10 +194,13 @@ TECLADO_CONSENTIMENTO = {"inline_keyboard": [[{"text": rot, "callback_data": f"l
 def texto_consentimento(responsaveis):
     from .convites import nome_escola
 
-    un = db.query("SELECT nome, config FROM unidades WHERE id = %s", (responsaveis[0]["unidade_id"],), one=True)
+    # Revisão (A15): responsável em duas escolas — a prova do consentimento citava só a primeiro
+    uns = db.query("SELECT nome, config FROM unidades WHERE id = ANY(%s) ORDER BY nome", (sorted({r["unidade_id"] for r in responsaveis}),))
+    nomes = [nome_escola(u) for u in uns] or ["a escola"]
+    escolas = nomes[0] if len(nomes) == 1 else ", ".join(nomes[:-1]) + " e " + nomes[-1]
     return (
-        f"Olá, {primeiro_nome(responsaveis[0]['nome'])}! Antes de ativar os avisos, a escola ({nome_escola(un)}) "
-        "precisa da sua autorização, conforme a LGPD.\n\n"
+        f"Olá, {primeiro_nome(responsaveis[0]['nome'])}! Antes de ativar os avisos, {'a escola' if len(nomes) == 1 else 'as escolas'} ({escolas}) "
+        f"{'precisa' if len(nomes) == 1 else 'precisam'} da sua autorização, conforme a LGPD.\n\n"
         f"A catraca da escola usa reconhecimento facial. Para isso, a escola guarda a foto do rosto de {_nomes_alunos(responsaveis)} "
         "e a sua. As fotos servem só para liberar a entrada e a saída e avisar você, e são apagadas em até 30 dias "
         "depois que o aluno deixa a escola.\n\n"
@@ -195,8 +218,16 @@ def pedir_consentimento(responsaveis, chat_id):
 
 
 def _ativar(r, chat_id):
+    antigo = r.get("telegram_chat_id")
     db.execute("UPDATE responsaveis SET telegram_chat_id = %s, telegram_ativado_em = now(), telegram_token = NULL, "
-               "telegram_chat_pendente = NULL WHERE id = %s", (chat_id, r["id"]))
+               "telegram_chat_pendente = NULL, telegram_bloqueado_em = NULL WHERE id = %s", (chat_id, r["id"]))
+    if antigo and int(antigo) != int(chat_id):
+        # Revisão (A5): quem ativava por último tomava o lugar do responsável sem ele saber
+        try:
+            enviar(antigo, f"Os avisos de {_alunos_de(r['id'])} foram transferidos para outro Telegram. "
+                           "Se não foi você, procure a secretaria da escola.")
+        except Exception as e:  # noqa: BLE001 — aviso de cortesia
+            log.info("não avisei o chat antigo %s: %s", antigo, e)
     db.execute("UPDATE fila_notificacao SET status = 'pendente' WHERE responsavel_id = %s AND status = 'sem_chat' AND criado_em > now() - interval '1 day'", (r["id"],))
 
 
@@ -216,13 +247,22 @@ def responder_consentimento(chat_id, opcao):
     alunos = _nomes_alunos(rs)
     with db.lote():
         for r in rs:
-            for pessoa_id in [a["pessoa_id"] for a in _alunos(r["id"])] + [r["pessoa_id"]]:
-                pessoas.registrar_consentimento(pessoa_id, r["nome"], date.today(), escopo="biometria", aceito=opcao == "tudo",
+            hoje = _hoje(r["unidade_id"])
+            biometricos = [a["pessoa_id"] for a in _alunos(r["id"])] + [r["pessoa_id"]]
+            for pessoa_id in biometricos:
+                pessoas.registrar_consentimento(pessoa_id, r["nome"], hoje, escopo="biometria", aceito=opcao == "tudo",
                                                 canal="telegram", responsavel_id=r["id"], texto=visto, observacao=f"Telegram chat {chat_id}")
-            pessoas.registrar_consentimento(r["pessoa_id"], r["nome"], date.today(), escopo="avisos", aceito=opcao != "nao",
+            pessoas.registrar_consentimento(r["pessoa_id"], r["nome"], hoje, escopo="avisos", aceito=opcao != "nao",
                                             canal="telegram", responsavel_id=r["id"], texto=visto, observacao=f"Telegram chat {chat_id}")
+            if opcao != "tudo":
+                # S10: sem autorização, a foto sai do banco e a pessoa sai da catraca (se outro
+                # responsável autorizou, a criança fica: basta um dos pais)
+                for pessoa_id in biometricos:
+                    pessoas.retirar_biometria_sem_consentimento(pessoa_id)
             if opcao == "nao":
-                db.execute("UPDATE responsaveis SET telegram_chat_pendente = NULL WHERE id = %s", (r["id"],))
+                # Revisão (A6): "não autorizo" de quem já recebia os avisos não desligava nada
+                db.execute("UPDATE responsaveis SET telegram_chat_pendente = NULL, "
+                           "telegram_chat_id = CASE WHEN telegram_chat_id = %s THEN NULL ELSE telegram_chat_id END WHERE id = %s", (chat_id, r["id"]))
             else:
                 _ativar(r, chat_id)
             auditar("consentimento_telegram", "responsavel", r["id"], depois={"opcao": opcao, "chat_id": chat_id}, unidade_id=r["unidade_id"])
@@ -232,7 +272,52 @@ def responder_consentimento(chat_id, opcao):
     if opcao == "avisos":
         return (f"Combinado, {nome}: avisos ativados, sem uso de foto. Sem a foto, a catraca não reconhece {alunos}, "
                 "que vai entrar e sair pela recepção. Se mudar de ideia, fale com a secretaria.")
-    return f"Tudo bem, {nome}. Nada foi ativado e nenhuma foto será usada. Se mudar de ideia, toque de novo no link da escola."
+    return f"Tudo bem, {nome}. Os avisos ficam desligados e nenhuma foto será usada. Se mudar de ideia, toque de novo no link da escola."
+
+
+def _hoje(unidade_id):
+    from ..util import hoje_local
+
+    un = db.query("SELECT fuso FROM unidades WHERE id = %s", (unidade_id,), one=True)
+    return hoje_local(un["fuso"] if un else "America/Sao_Paulo")
+
+
+def parar(chat_id):
+    """/parar: o responsável desliga os avisos sozinho (A6). Fica registrado como recusa."""
+    from ..pessoas import service as pessoas
+
+    chat_id = int(chat_id)
+    rs = db.query("SELECT r.*, p.nome, p.unidade_id, p.id AS pessoa_id FROM responsaveis r JOIN pessoas p ON p.id = r.pessoa_id "
+                  "WHERE r.telegram_chat_id = %s", (chat_id,))
+    if not rs:
+        return "Este Telegram não está recebendo avisos."
+    with db.lote():
+        for r in rs:
+            pessoas.registrar_consentimento(r["pessoa_id"], r["nome"], _hoje(r["unidade_id"]), escopo="avisos", aceito=False,
+                                            canal="telegram", responsavel_id=r["id"], texto="/parar", observacao=f"Telegram chat {chat_id}")
+            db.execute("UPDATE responsaveis SET telegram_chat_id = NULL WHERE id = %s", (r["id"],))
+            auditar("telegram_parar", "responsavel", r["id"], depois={"chat_id": chat_id}, unidade_id=r["unidade_id"])
+    return "Pronto: os avisos foram desligados. Para voltar a receber, toque de novo no link da escola."
+
+
+def _quem_e_voce(achados, chat_id):
+    """A11: pai e mãe com o mesmo celular. Antes os dois ficavam no mesmo chat e o
+    consentimento saía no nome de quem não respondeu. Agora a pessoa diz quem é."""
+    chat_id = int(chat_id)
+    db.execute("UPDATE responsaveis SET telegram_chat_pendente = NULL WHERE telegram_chat_pendente = %s", (chat_id,))
+    db.execute("UPDATE responsaveis SET telegram_chat_pendente = %s WHERE id = ANY(%s)", (chat_id, [r["id"] for r in achados]))
+    botoes = [[{"text": f"Sou {r['nome']}", "callback_data": f"quem:{r['id']}"}] for r in achados]
+    return {"texto": "Este telefone está no cadastro de mais de uma pessoa. Quem é você?", "reply_markup": {"inline_keyboard": botoes}}
+
+
+def escolher_quem(chat_id, responsavel_id):
+    chat_id = int(chat_id)
+    rs = db.query("SELECT r.*, p.nome, p.unidade_id FROM responsaveis r JOIN pessoas p ON p.id = r.pessoa_id "
+                  "WHERE r.telegram_chat_pendente = %s AND p.status <> 'desligado'", (chat_id,))
+    escolhido = next((r for r in rs if r["id"] == int(responsavel_id)), None)
+    if not escolhido:
+        return {"texto": "Esta escolha expirou. Compartilhe o telefone de novo.", "reply_markup": TECLADO_TELEFONE}
+    return pedir_consentimento([escolhido], chat_id)
 
 
 # ---------------------------------------------------------------- webhook
@@ -247,6 +332,9 @@ def processar_update(update):
         if not chat.get("id") or chat.get("id") != (cq.get("from") or {}).get("id"):
             return {"texto": None, "callback": cq.get("id"), "aviso": "Use a conversa privada com o bot."}
         dado = cq.get("data") or ""
+        if dado.startswith("quem:") and dado[5:].isdigit():
+            r = escolher_quem(chat["id"], dado[5:])
+            return {**r, "callback": cq.get("id"), "mensagem": (cq.get("message") or {}).get("message_id"), "chat": chat["id"]}
         texto = responder_consentimento(chat["id"], dado.split(":", 1)[1] if dado.startswith("lgpd:") else "")
         return {"texto": texto, "reply_markup": TECLADO_REMOVER, "callback": cq.get("id"),
                 "mensagem": (cq.get("message") or {}).get("message_id"), "chat": chat["id"]}
@@ -263,6 +351,11 @@ def processar_update(update):
         achados = achar_por_telefone(contato.get("phone_number"))
         if not achados:
             return {"texto": "Não encontrei um cadastro com este telefone. Confirme na secretaria da escola qual número está no seu cadastro.", "reply_markup": TECLADO_REMOVER}
+        por_escola = {}
+        for a in achados:
+            por_escola.setdefault(a["unidade_id"], []).append(a)
+        if any(len(v) > 1 for v in por_escola.values()):
+            return _quem_e_voce([a for v in por_escola.values() if len(v) > 1 for a in v], chat["id"])
         return pedir_consentimento(achados, chat["id"])
 
     texto = (msg.get("text") or "").strip()
@@ -272,12 +365,18 @@ def processar_update(update):
             r = achar_por_token(partes[1].strip())
             if r and r["telegram_chat_id"] == chat["id"]:
                 return {"texto": f"Os avisos já estão ativos aqui, {primeiro_nome(r['nome'])}.", "reply_markup": TECLADO_REMOVER}
+            if r and not normalizar_telefone(r.get("telefone") or ""):
+                return pedir_consentimento([r], chat["id"])  # sem telefone no cadastro: o link basta
             if r:
-                return pedir_consentimento([r], chat["id"])
+                # Revisão (A5): o link sozinho não basta — o telefone do Telegram precisa ser o do cadastro
+                return {"texto": f"Olá! Para confirmar que é você, {primeiro_nome(r['nome'])}, toque no botão abaixo e compartilhe o seu telefone.",
+                        "reply_markup": TECLADO_TELEFONE}
         # link da escola (u<id>), link vencido ou /start seco: acha pelo telefone
         return {"texto": "Para ativar os avisos de entrada e saída, toque no botão abaixo e compartilhe o telefone que está no cadastro da escola.", "reply_markup": TECLADO_TELEFONE}
+    if texto.split("@")[0] in ("/parar", "/stop", "/sair"):
+        return {"texto": parar(chat["id"]), "reply_markup": TECLADO_REMOVER}
     if texto.startswith("/"):
-        return {"texto": "Este bot só envia os avisos da escola. Para ativar, mande /start.", "reply_markup": TECLADO_REMOVER}
+        return {"texto": "Este bot só envia os avisos da escola. Para ativar, mande /start. Para desligar, /parar.", "reply_markup": TECLADO_REMOVER}
     return None
 
 
@@ -292,7 +391,7 @@ def responder_update(update):
             if resposta.get("mensagem"):
                 _chamar("editMessageReplyMarkup", {"chat_id": resposta["chat"], "message_id": resposta["mensagem"], "reply_markup": {"inline_keyboard": []}})
         if resposta.get("texto"):
-            chat = resposta.get("chat") or update["message"]["chat"]["id"]
+            chat = resposta.get("chat") or (update.get("message") or {}).get("chat", {}).get("id")
             enviar(chat, resposta["texto"], reply_markup=resposta.get("reply_markup"))
     except Exception as e:  # noqa: BLE001 — resposta é cortesia; não pode derrubar o webhook
         log.warning("falha ao responder Telegram: %s", e)

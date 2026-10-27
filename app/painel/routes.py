@@ -15,10 +15,23 @@ bp = Blueprint("painel", __name__)
 
 
 def _periodo():
-    hoje = date.today()
-    ini = request.args.get("de") or (hoje - timedelta(days=6)).isoformat()
-    fim = request.args.get("ate") or hoje.isoformat()
-    return date.fromisoformat(ini), date.fromisoformat(fim)
+    from ..util import hoje_local
+
+    hoje = hoje_local(g.unidade["fuso"] if getattr(g, "unidade", None) else "America/Sao_Paulo")  # A17: data da escola, não de Londres
+    try:
+        ini = date.fromisoformat(request.args.get("de") or (hoje - timedelta(days=6)).isoformat())
+        fim = date.fromisoformat(request.args.get("ate") or hoje.isoformat())
+    except ValueError:
+        abort(400)
+    if fim < ini:
+        ini, fim = fim, ini
+    # A18: período sem limite lia a tabela de eventos inteira
+    return max(ini, fim - timedelta(days=366)), fim
+
+
+# Faixa do período em hora da escola, escrita de um jeito que usa o índice (unidade, ocorrido_em).
+# Antes: (ocorrido_em AT TIME ZONE fuso)::date BETWEEN … — calculado linha a linha, tabela inteira.
+_FAIXA = "e.ocorrido_em >= (%s::date::timestamp AT TIME ZONE %s) AND e.ocorrido_em < ((%s::date + 1)::timestamp AT TIME ZONE %s)"
 
 
 @bp.get("/painel/rede")
@@ -31,7 +44,7 @@ def rede():
     hoje = {r["unidade_id"]: r for r in db.query(
         "SELECT e.unidade_id, count(*) FILTER (WHERE e.tipo = ANY(%s)) AS entradas, count(*) FILTER (WHERE e.tipo = %s) AS atrasos, "
         "count(*) FILTER (WHERE e.tipo = ANY(%s)) AS negados, count(*) FILTER (WHERE e.tipo = %s) AS antecipadas, max(e.ocorrido_em) AS ultimo "
-        "FROM eventos e JOIN unidades u ON u.id = e.unidade_id WHERE e.unidade_id = ANY(%s) "
+        "FROM eventos e JOIN unidades u ON u.id = e.unidade_id WHERE e.unidade_id = ANY(%s) AND e.ocorrido_em > now() - interval '30 hours' "
         "AND e.ocorrido_em >= date_trunc('day', now() AT TIME ZONE u.fuso) AT TIME ZONE u.fuso GROUP BY e.unidade_id",
         (list(tipos.ENTRADAS), tipos.ENTRADA_ATRASADA, list(tipos.NEGADOS), tipos.SAIDA_ANTECIPADA, ids),
     )}
@@ -156,17 +169,17 @@ def relatorios():
             "SELECT p.id, p.nome, t.nome AS turma, count(DISTINCT (e.ocorrido_em AT TIME ZONE %s)::date) FILTER (WHERE e.tipo = ANY(%s)) AS dias_presente, "
             "count(*) FILTER (WHERE e.tipo = %s) AS atrasos "
             "FROM pessoas p JOIN alunos a ON a.pessoa_id = p.id JOIN turmas t ON t.id = a.turma_id "
-            "LEFT JOIN eventos e ON e.pessoa_id = p.id AND (e.ocorrido_em AT TIME ZONE %s)::date BETWEEN %s AND %s "
+            f"LEFT JOIN eventos e ON e.pessoa_id = p.id AND {_FAIXA} "
             f"WHERE p.unidade_id = %s AND p.status = 'ativo'{filtro_turma} GROUP BY p.id, t.nome ORDER BY t.nome, p.nome",
-            [un["fuso"], list(tipos.ENTRADAS), tipos.ENTRADA_ATRASADA, un["fuso"], de, ate, un["id"]] + params_turma,
+            [un["fuso"], list(tipos.ENTRADAS), tipos.ENTRADA_ATRASADA, de, un["fuso"], ate, un["fuso"], un["id"]] + params_turma,
         )
     elif tipo in ("atrasos", "antecipadas", "negados"):
         alvo = {"atrasos": [tipos.ENTRADA_ATRASADA], "antecipadas": [tipos.SAIDA_ANTECIPADA], "negados": list(tipos.NEGADOS)}[tipo]
         linhas = db.query(
             "SELECT e.*, p.nome, t.nome AS turma, u.nome AS autorizado_nome FROM eventos e LEFT JOIN pessoas p ON p.id = e.pessoa_id "
             "LEFT JOIN alunos a ON a.pessoa_id = p.id LEFT JOIN turmas t ON t.id = a.turma_id LEFT JOIN usuarios_admin u ON u.id = e.autorizado_por "
-            f"WHERE e.unidade_id = %s AND e.tipo = ANY(%s) AND (e.ocorrido_em AT TIME ZONE %s)::date BETWEEN %s AND %s{filtro_turma} ORDER BY e.ocorrido_em DESC",
-            [un["id"], alvo, un["fuso"], de, ate] + params_turma,
+            f"WHERE e.unidade_id = %s AND e.tipo = ANY(%s) AND {_FAIXA}{filtro_turma} ORDER BY e.ocorrido_em DESC LIMIT 5000",
+            [un["id"], alvo, de, un["fuso"], ate, un["fuso"]] + params_turma,
         )
     dias_uteis = sum(1 for i in range((ate - de).days + 1) if (de + timedelta(days=i)).weekday() < 5)
     return render_template("painel/relatorios.html", tipo=tipo, linhas=linhas, de=de, ate=ate, turmas=turmas, turma_id=turma_id,
@@ -184,8 +197,8 @@ def historico(pessoa_id):
     linhas = db.query(
         "SELECT e.*, pc.nome AS correlacao_nome, u.nome AS autorizado_nome, d.nome AS dispositivo_nome FROM eventos e LEFT JOIN pessoas pc ON pc.id = e.correlacao_id "
         "LEFT JOIN usuarios_admin u ON u.id = e.autorizado_por LEFT JOIN dispositivos d ON d.id = e.dispositivo_id "
-        "WHERE e.pessoa_id = %s AND (e.ocorrido_em AT TIME ZONE %s)::date BETWEEN %s AND %s ORDER BY e.ocorrido_em DESC",
-        (pessoa_id, un["fuso"], de, ate),
+        f"WHERE e.pessoa_id = %s AND {_FAIXA} ORDER BY e.ocorrido_em DESC LIMIT 2000",
+        (pessoa_id, de, un["fuso"], ate, un["fuso"]),
     )
     return render_template("painel/historico.html", p=p, linhas=linhas, de=de, ate=ate, rotulos=tipos.ROTULOS, fuso=un["fuso"])
 

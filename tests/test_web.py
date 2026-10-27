@@ -102,8 +102,12 @@ def test_ativacao_telegram_por_token(cliente, seed, app):
     assert token and f"?start={token}" in html
     assert cliente.get(f"/telegram/ativar/{rid}/qr.png").content_type == "image/png"
     telegram.enfileirar(seed["unidade"]["id"], rid, "msg antes da ativação")
+    assert db.query("SELECT status FROM fila_notificacao", one=True)["status"] == "pendente"  # o chat é decidido no envio (A1)
+    assert notify.enviar_pendentes(enviar=lambda c, t: None) == (0, 0)
     assert db.query("SELECT status FROM fila_notificacao", one=True)["status"] == "sem_chat"
-    pergunta = telegram.processar_update({"message": {"chat": {"id": 555}, "text": f"/start {token}"}})
+    pede_tel = telegram.processar_update({"message": {"chat": {"id": 555}, "text": f"/start {token}"}})
+    assert pede_tel["reply_markup"]["keyboard"][0][0]["request_contact"]
+    pergunta = telegram.processar_update({"message": {"chat": {"id": 555}, "from": {"id": 555}, "contact": {"user_id": 555, "phone_number": "+5521999990000"}}})
     assert "autorização" in pergunta["texto"] and "Maria" in pergunta["texto"] and pergunta["reply_markup"]["inline_keyboard"]
     assert db.query("SELECT telegram_chat_id FROM responsaveis WHERE id = %s", (rid,), one=True)["telegram_chat_id"] is None  # só ativa depois da resposta
     resposta = telegram.processar_update(_clique(555, "tudo"))["texto"]

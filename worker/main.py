@@ -48,11 +48,6 @@ def rodada_nuvem(contadores):
         enviados, falhas = convites.enviar_pendentes()
         if enviados or falhas:
             log.info("convites por e-mail: %d enviados, %d falhas", enviados, falhas)
-    if os.environ.get("MODO") == "nuvem" and _a_cada(contadores, "vigia", 30):
-        from app.espelho import failover
-
-        for u, acao in failover.verificar():
-            log.warning("vigia: failover %s em %s", acao, u["nome"])
     if _a_cada(contadores, "lgpd", 3600):
         n = lgpd.purgar_desligados()
         if n:
@@ -60,6 +55,7 @@ def rodada_nuvem(contadores):
         from app.espelho import service as esp
 
         esp.limpar_outbox_da_nuvem()
+        notify.limpar_antigos()
 
 
 def _etapa(nome, fn, *args):
@@ -151,9 +147,32 @@ def iniciar_agente(unidade_id):
     ]
 
 
+def vigia():
+    from app.espelho import failover
+
+    for u, acao in failover.verificar():
+        log.warning("vigia: failover %s em %s", acao, u["nome"])
+
+
+def conectar(url, maxconn, espera_max=60):
+    """Revisão (A19): banco lento na partida (Railway subindo os dois juntos) fazia o worker
+    desistir e ficar parado. Agora tenta em laço, sem limite."""
+    espera = 2
+    while True:
+        try:
+            db.init(url, 1, maxconn)
+            db.query("SELECT 1")
+            return
+        except Exception as e:  # noqa: BLE001
+            log.warning("banco indisponível (%s); nova tentativa em %ss", e, espera)
+            db.fechar()
+            time.sleep(espera)
+            espera = min(espera * 2, espera_max)
+
+
 def main():
     modo = os.environ.get("MODO", "unico")
-    db.init(os.environ["DATABASE_URL"], 1, 8 if modo == "local" else 4)
+    conectar(os.environ["DATABASE_URL"], 8)
     db.gucs = {"nexosix.outbox": "on"} if modo in ("nuvem", "local") else {}
     # Marca de escola nas escritas do worker (o site faz isso pela sessão). Sem ela a exclusão
     # LGPD das fotos saía da nuvem sem escola e o PC da escola nunca apagava a foto.
@@ -169,6 +188,10 @@ def main():
             time.sleep(10)
         log.error("uma tarefa do agente parou; saindo pro serviço (NSSM/systemd) reiniciar")
         raise SystemExit(1)
+    if modo == "nuvem":
+        # Revisão (A9): o vigia da redundância ficava no mesmo laço do envio; no pico das 7h,
+        # 2 mil mensagens atrasavam a troca de DNS de uma escola com o servidor caído.
+        _laco("vigia", 30, vigia, None)
     while True:
         try:
             if modo == "nuvem":

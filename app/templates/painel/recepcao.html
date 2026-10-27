@@ -47,8 +47,11 @@
 <script>
 const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function atualizar() {
-  const r = await fetch("{{ url_for('api.painel_estado') }}", {credentials: 'same-origin'}); if (!r.ok) return;
+  let r;
+  try { r = await fetch("{{ url_for('api.painel_estado') }}", {credentials: 'same-origin'}); } catch (e) { return; }
+  if (!r.ok) return;
   const d = await r.json();
+  marcarAtualizado();
   document.getElementById('esperas').innerHTML = d.esperas.length ? d.esperas.map(e => `<li class="list-group-item"><b>${esc(e.responsavel)}</b> chegou para buscar <b>${esc(e.alunos || '—')}</b><br><small>${e.identificado_em} · vale até ${e.expira_em}</small>
     <form method="post" action="/painel/espera/${e.id}/encerrar" class="d-inline float-end"><button class="btn btn-sm btn-outline-secondary">encerrar</button></form></li>`).join('') : '<li class="list-group-item text-muted">ninguém esperando</li>';
   const ruins = d.dispositivos.filter(x => x.status !== 'online');

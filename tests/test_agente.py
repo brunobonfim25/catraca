@@ -88,13 +88,13 @@ def test_fluxo_nuvem_agente_catraca(agente, nuvem, simulador, servidor_app):
     # ---- 1. cadastro na nuvem (turma, aluno com foto, mãe, catraca)
     assert S.post(N + "/turmas/nova", data={"nome": "Pré 1", "turno": "manha", "exige_responsavel_saida": "1", "tolerancia_entrada_min": "15", "entrada_fim": "23:59", "saida_inicio": "00:00", "saida_fim": "23:59"}).ok
     S.post(N + "/dispositivos/novo", data={"nome": "Catraca", "ip": "127.0.0.1", "porta": simulador["porta"], "senha_api": "admin", "usuario_api": "admin", "ativo": "1"})
-    r = S.post(N + "/pessoas/alunos/novo", data={"nome": "Maria Nuvem", "turma_id": "1", "saida_autonoma": "turma"}, allow_redirects=False)
+    r = S.post(N + "/pessoas/alunos/novo", data={"nome": "Maria Nuvem", "turma_id": "1", "saida_autonoma": "turma", "consentimento_por": "Ana Nuvem"}, allow_redirects=False)
     assert r.status_code == 302 and "/foto" in r.headers["Location"]
     maria = int(r.headers["Location"].split("/pessoas/")[1].split("/")[0])
     import base64
 
     assert S.post(f"{N}/pessoas/{maria}/foto", json={"imagem": "data:image/jpeg;base64," + base64.b64encode(JPEG_OK).decode()}).json()["ok"]
-    r = S.post(N + "/pessoas/responsaveis/novo", data={"nome": "Ana Nuvem", "aluno_id": "1", "parentesco": "mãe", "regra": "sempre"}, allow_redirects=False)
+    r = S.post(N + "/pessoas/responsaveis/novo", data={"nome": "Ana Nuvem", "aluno_id": "1", "parentesco": "mãe", "regra": "sempre", "consentimento_por": "Ana Nuvem"}, allow_redirects=False)
     ana = int(r.headers["Location"].split("/pessoas/")[1].split("/")[0])
     S.post(f"{N}/pessoas/{ana}/foto", json={"imagem": "data:image/jpeg;base64," + base64.b64encode(JPEG_OK + b"\x09").decode()})
     S.post(N + "/dispositivos/1/testar")

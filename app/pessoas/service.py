@@ -220,7 +220,7 @@ def buscar(unidade_id, termo=None, tipo=None, turma_id=None, incluir_desligados=
 def detalhe(pessoa_id):
     return db.query(
         "SELECT p.*, a.id AS aluno_id, a.turma_id, a.matricula, a.saida_autonoma, t.nome AS turma_nome, "
-        "r.id AS responsavel_id, r.telefone, r.email, r.telegram_chat_id, r.telegram_ativado_em, "
+        "r.id AS responsavel_id, r.telefone, r.email, r.telegram_chat_id, r.telegram_ativado_em, r.telegram_bloqueado_em, "
         "f.id AS funcionario_id, f.cargo, f.escala, (pf.pessoa_id IS NOT NULL) AS tem_foto "
         "FROM pessoas p LEFT JOIN alunos a ON a.pessoa_id = p.id LEFT JOIN turmas t ON t.id = a.turma_id "
         "LEFT JOIN responsaveis r ON r.pessoa_id = p.id LEFT JOIN funcionarios f ON f.pessoa_id = p.id "
@@ -263,13 +263,19 @@ def registrar_consentimento(pessoa_id, assinado_por, assinado_em, arquivo_nome=N
             unidade_id=unidade and unidade["unidade_id"])
 
 
-# Consentimento de foto válido: um aceite sem recusa MAIS NOVA da mesma fonte (o mesmo
-# responsável, ou o papel). Basta um dos pais (LGPD art. 14 §1º). escopo NULL = registro antigo.
+# Consentimento de foto válido. Vale a resposta MAIS NOVA de cada fonte (cada responsável,
+# e a escola — papel/importação, sem responsável). Basta um dos pais aceitar (LGPD art. 14 §1º).
+# Revisão (A7): a declaração da escola ("termo assinado na matrícula") não vale contra a recusa
+# de um dos pais pelo bot — antes a criança seguia reconhecida mesmo com a mãe dizendo não.
+# escopo NULL = registro antigo (biometria).
 _BIOMETRIA_VALIDA = (
-    "SELECT bool_or(c.aceito AND NOT EXISTS (SELECT 1 FROM consentimentos_lgpd d WHERE d.pessoa_id = c.pessoa_id "
-    " AND coalesce(d.escopo, 'biometria') = 'biometria' AND d.responsavel_id IS NOT DISTINCT FROM c.responsavel_id "
-    " AND d.id > c.id AND NOT d.aceito)) AS ok, bool_or(NOT c.aceito) AS recusa "
-    "FROM consentimentos_lgpd c WHERE c.pessoa_id = {pessoa} AND coalesce(c.escopo, 'biometria') = 'biometria'"
+    "SELECT coalesce(bool_or(u.aceito AND u.responsavel_id IS NOT NULL), false) "
+    "    OR (coalesce(bool_or(u.aceito AND u.responsavel_id IS NULL), false) "
+    "        AND NOT coalesce(bool_or(NOT u.aceito AND u.responsavel_id IS NOT NULL), false)) AS ok, "
+    "  coalesce(bool_or(NOT u.aceito), false) AS recusa "
+    "FROM (SELECT DISTINCT ON (c.responsavel_id) c.responsavel_id, c.aceito FROM consentimentos_lgpd c "
+    "      WHERE c.pessoa_id = {pessoa} AND coalesce(c.escopo, 'biometria') = 'biometria' "
+    "      ORDER BY c.responsavel_id, c.id DESC) u"
 )
 
 
@@ -277,6 +283,26 @@ def tem_consentimento(pessoa_id):
     """Autorização vigente para usar a foto (biometria) desta pessoa."""
     r = db.query(_BIOMETRIA_VALIDA.format(pessoa="%s"), (pessoa_id,), one=True)
     return bool(r and r["ok"])
+
+
+def precisa_consentimento(pessoa):
+    """Foto de aluno e de responsável só com autorização (S10). Funcionário assina o termo dele
+    na contratação; visitante não tem foto."""
+    return pessoa["tipo"] in ("aluno", "responsavel")
+
+
+def retirar_biometria_sem_consentimento(pessoa_id):
+    """Recusa (A7/S10): a foto sai do banco e a pessoa sai da catraca na hora — antes a
+    criança continuava sendo reconhecida depois da mãe responder "só os avisos"."""
+    if tem_consentimento(pessoa_id):
+        return False
+    p = db.query("SELECT unidade_id, status FROM pessoas WHERE id = %s", (pessoa_id,), one=True)
+    tinha = db.query("SELECT 1 FROM pessoa_fotos WHERE pessoa_id = %s", (pessoa_id,), one=True)
+    if tinha:
+        apagar_dados_biometricos(pessoa_id)
+    if p and p["status"] != "desligado":
+        dispositivos.enfileirar_remocao(pessoa_id, p["unidade_id"])
+    return bool(tinha)
 
 
 def consentimentos(pessoa_id):

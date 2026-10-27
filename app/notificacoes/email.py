@@ -37,7 +37,15 @@ def configurado():
 
 
 class EmailErro(RuntimeError):
-    pass
+    def __init__(self, msg, status=None):
+        super().__init__(msg)
+        self.status = status
+
+    @property
+    def cota(self):
+        """Cota do dia estourada (Brevo grátis: 300/dia) — não é erro do convite."""
+        t = str(self).lower()
+        return self.status == 429 or "quota" in t or "limit" in t or "cota" in t
 
 
 def enviar(para, assunto, html, texto, nome_remetente="Nexosix Acesso", responder_para=None):
@@ -64,5 +72,5 @@ def enviar(para, assunto, html, texto, nome_remetente="Nexosix Acesso", responde
             msg = r.json().get("message") or r.text[:200]
         except ValueError:
             msg = r.text[:200]
-        raise EmailErro(f"{qual} {r.status_code}: {msg}")
+        raise EmailErro(f"{qual} {r.status_code}: {msg}", r.status_code)
     return r.json() if r.content else {}
