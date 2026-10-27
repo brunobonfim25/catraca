@@ -9,13 +9,20 @@ def agora_utc():
     return datetime.now(timezone.utc)
 
 
+def _zona(fuso):
+    try:
+        return ZoneInfo(fuso or FUSO_PADRAO)
+    except Exception:  # noqa: BLE001 — fuso inválido no banco não pode derrubar a tela
+        return ZoneInfo(FUSO_PADRAO)
+
+
 def para_local(dt, fuso=FUSO_PADRAO):
     """timestamptz (UTC) → datetime no fuso da unidade."""
     if dt is None:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(ZoneInfo(fuso))
+    return dt.astimezone(_zona(fuso))
 
 
 def de_unix(ts):
@@ -38,7 +45,7 @@ def formatar_data_hora(dt, fuso=FUSO_PADRAO):
 
 def combinar_local(dia: date, hora: time, fuso=FUSO_PADRAO):
     """Data + hora da turma (no fuso da escola) → datetime com fuso."""
-    return datetime.combine(dia, hora, tzinfo=ZoneInfo(fuso))
+    return datetime.combine(dia, hora, tzinfo=_zona(fuso))
 
 
 def primeiro_nome(nome):

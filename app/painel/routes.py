@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
-from .. import db
+from .. import db, fusos
 from ..auditoria import auditar
 from ..auth.rbac import exige, login_obrigatorio, unidade_atual_ou_403, unidades_visiveis
 from ..dispositivos import service as dispositivos
@@ -203,7 +203,7 @@ def auditoria():
 @login_obrigatorio
 def unidades():
     empresas = db.query("SELECT * FROM empresas ORDER BY nome") if g.usuario["perfil"] == "superadmin" else []
-    return render_template("painel/unidades.html", unidades=unidades_visiveis(g.usuario), empresas=empresas)
+    return render_template("painel/unidades.html", unidades=unidades_visiveis(g.usuario), empresas=empresas, fusos=fusos.FUSOS_BRASIL)
 
 
 @bp.post("/empresas/nova")
@@ -225,7 +225,7 @@ def unidade_nova():
         abort(400)
     row = db.execute(
         "INSERT INTO unidades (empresa_id, nome, endereco, fuso) VALUES (%s,%s,%s,%s) RETURNING id",
-        (empresa_id, f["nome"].strip(), f.get("endereco"), f.get("fuso") or "America/Sao_Paulo"), returning=True,
+        (empresa_id, f["nome"].strip(), f.get("endereco"), fusos.validar(f.get("fuso"))), returning=True,
     )
     auditar("criar", "unidade", row["id"], depois={"nome": f["nome"]}, unidade_id=row["id"])
     return redirect(url_for("auth.trocar_unidade", unidade_id=row["id"]))
@@ -245,11 +245,11 @@ def unidade_config(unidade_id):
             "dns_nome": (f.get("dns_nome") or "").strip().lower() or None,
         }
         db.execute("UPDATE unidades SET nome = %s, endereco = %s, fuso = %s, config = config || %s WHERE id = %s",
-                   (f["nome"].strip(), f.get("endereco"), f.get("fuso") or "America/Sao_Paulo", json.dumps(cfg), unidade_id))
+                   (f["nome"].strip(), f.get("endereco"), fusos.validar(f.get("fuso")), json.dumps(cfg), unidade_id))
         auditar("config", "unidade", unidade_id, antes=un["config"], depois=cfg)
         flash("Unidade atualizada", "success")
         return redirect(url_for("painel.unidade_config", unidade_id=unidade_id))
-    return render_template("painel/unidade_config.html", un=un)
+    return render_template("painel/unidade_config.html", un=un, fusos=fusos.FUSOS_BRASIL)
 
 
 @bp.post("/unidades/<int:unidade_id>/token-agente")

@@ -122,3 +122,14 @@ def test_worker_envia_telegram_com_retry(seed):
     assert notify.enviar_pendentes(enviar=quebrado) == (0, 1)
     n = db.query("SELECT * FROM fila_notificacao WHERE texto = 'falha'", one=True)
     assert n["status"] == "pendente" and n["proximo_em"] > n["criado_em"] and "502" in n["erro"]
+
+
+def test_fuso_invalido_cai_no_padrao(cliente, seed):
+    from app import fusos
+
+    assert fusos.validar("Itaguaí Rio de Janeiro ") == "America/Sao_Paulo"
+    assert fusos.validar("America/Manaus") == "America/Manaus"
+    cliente.post("/unidades/nova", data={"nome": "Itaguaí", "fuso": "Itaguaí Rio de Janeiro"})
+    assert db.query("SELECT fuso FROM unidades WHERE nome = 'Itaguaí'", one=True)["fuso"] == "America/Sao_Paulo"
+    db.execute("UPDATE unidades SET fuso = 'invalido' WHERE id = %s", (seed["unidade"]["id"],))
+    assert cliente.get("/painel/presenca").status_code == 200  # formatação de hora não quebra com fuso ruim

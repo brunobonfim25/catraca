@@ -4,7 +4,7 @@
 <form method="post" class="col-lg-6">
   <div class="mb-2"><label class="form-label">Nome</label><input class="form-control" name="nome" value="{{ un.nome }}" required></div>
   <div class="mb-2"><label class="form-label">Endereço</label><input class="form-control" name="endereco" value="{{ un.endereco or '' }}"></div>
-  <div class="mb-2"><label class="form-label">Fuso</label><input class="form-control" name="fuso" value="{{ un.fuso }}"></div>
+  <div class="mb-2"><label class="form-label">Fuso horário</label><select class="form-select" name="fuso">{% for k, v in fusos %}<option value="{{ k }}" {{ 'selected' if un.fuso == k }}>{{ v }}</option>{% endfor %}</select></div>
   <div class="mb-2"><label class="form-label">Responsável fica em espera por (minutos)</label><input class="form-control" type="number" name="espera_responsavel_min" value="{{ un.config.get('espera_responsavel_min', 15) }}"></div>
   <div class="mb-3"><label class="form-label">Quando o responsável se identifica no leitor de fora (modo Pro)</label>
     <select class="form-select" name="responsavel_resposta">

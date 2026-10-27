@@ -59,8 +59,12 @@ def conexao():
     try:
         yield conn
     finally:
-        # Conexão com erro de transação pendente fica inutilizável: melhor descartar.
-        if conn.closed or conn.get_transaction_status() == psycopg2.extensions.TRANSACTION_STATUS_INERROR:
+        # Conexão com erro de transação pendente (ou morta) fica inutilizável: melhor descartar.
+        try:
+            quebrada = conn.closed or conn.get_transaction_status() == psycopg2.extensions.TRANSACTION_STATUS_INERROR
+        except psycopg2.Error:
+            quebrada = True
+        if quebrada:
             try:
                 conn.rollback()
             except Exception:
@@ -94,21 +98,37 @@ def transacao(outbox=None):
             cur.close()
 
 
+def _com_retry(fn):
+    """Conexão do pool morta (banco reiniciou, SSL caiu) → descarta e tenta uma vez de novo.
+    Sem isso a primeira requisição depois de um restart do banco dava 500."""
+    try:
+        return fn()
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        return fn()
+
+
 def query(sql, params=None, one=False):
-    with transacao() as cur:
-        cur.execute(sql, params)
-        if one:
-            return cur.fetchone()
-        return cur.fetchall()
+    def _run():
+        with transacao() as cur:
+            cur.execute(sql, params)
+            if one:
+                return cur.fetchone()
+            return cur.fetchall()
+
+    return _com_retry(_run)
 
 
 def execute(sql, params=None, returning=False, outbox=None):
     """Executa INSERT/UPDATE/DELETE. Com returning=True devolve a primeira linha."""
-    with transacao(outbox=outbox) as cur:
-        cur.execute(sql, params)
-        if returning:
-            return cur.fetchone()
-        return cur.rowcount
+
+    def _run():
+        with transacao(outbox=outbox) as cur:
+            cur.execute(sql, params)
+            if returning:
+                return cur.fetchone()
+            return cur.rowcount
+
+    return _com_retry(_run)
 
 
 # ---------------------------------------------------------------- migrations

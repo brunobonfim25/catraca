@@ -21,7 +21,7 @@
         {% if usuario.perfil == 'superadmin' %}<select class="form-select mb-2" name="empresa_id" required>{% for e in empresas %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}</select>{% endif %}
         <input class="form-control mb-2" name="nome" placeholder="ex. Recreio" required>
         <input class="form-control mb-2" name="endereco" placeholder="Endereço">
-        <input class="form-control mb-2" name="fuso" value="America/Sao_Paulo">
+        <select class="form-select mb-2" name="fuso">{% for k, v in fusos %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
         <button class="btn btn-primary">Criar e abrir</button>
       </form>
     </div></div>
