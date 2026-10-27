@@ -27,10 +27,15 @@ na catraca: [`integrations/controlid/README.md`](integrations/controlid/README.m
   Monitor, envia fotos/regras, coleta logs. Sobe eventos, presença e status para a nuvem.
 - **Internet caiu** → o agente continua decidindo com a cópia local; eventos ficam na fila e
   sobem quando voltar (Telegram sai atrasado com a hora real).
-- **Agente parou** → a catraca entra em contingência: libera entrada, **nega a saída de quem
-  precisa de responsável** (regra só no portal de entrada); a recepção libera pelo portão PCD
-  e registra no painel. Eventos ficam na catraca e são coletados quando o agente voltar.
-  Fase 2: com a catraca na VPN (client da Control iD), a nuvem pode assumir a catraca.
+- **Agente parou** → **redundância por DNS**: a catraca aponta para um nome
+  (`catraca-recreio.nexosix.com.br`) que normalmente resolve para o IP do agente na LAN.
+  O vigia da nuvem nota o agente mudo (2 min) e troca o registro para a própria nuvem
+  (Cloudflare); como é a catraca quem inicia as conexões, ela passa a mandar Monitor e a
+  perguntar o modo Pro para a nuvem, sem VPN. Quando o agente volta a dar sinal, o DNS
+  volta e o agente puxa tudo o que a nuvem registrou. No intervalo de troca (TTL 60 s) a
+  catraca fica em contingência: libera entrada e **nega a saída de quem precisa de
+  responsável** (regra só no portal de entrada). Sem Cloudflare configurada, só a
+  contingência vale (eventos ficam na catraca e são coletados quando o agente voltar).
 - Sincronização por **outbox**: toda escrita vira uma linha em `espelho_outbox` (trigger); a
   nuvem marca de qual unidade é cada linha; o agente puxa as dele (`/api/espelho/<token>/reverso`)
   e empurra as suas (`POST /api/espelho/<token>`). Aplicar nunca gera eco. Ids não colidem: o
@@ -48,6 +53,15 @@ Depois do primeiro deploy: `flask --app wsgi telegram-webhook`.
 
 Para cada escola: painel → Unidades → criar; shell do Railway:
 `flask --app wsgi token-espelho --unidade-id <id>` → `ESPELHO_TOKEN` para o agente.
+
+**Redundância por DNS** (opcional, recomendada): domínio na Cloudflare; na nuvem
+`CLOUDFLARE_API_TOKEN` (Zone.DNS:Edit), `CLOUDFLARE_ZONE_ID`, `FAILOVER_NUVEM_ALVO` (host do
+Railway); na Cloudflare, "Always Use HTTPS" **desligado** para esse nome e SSL "Full" (a catraca
+fala HTTP na porta 80; a Cloudflare fala HTTPS com o Railway); na configuração da unidade,
+"Nome DNS da catraca" = `catraca-recreio.nexosix.com.br`. O agente escuta na porta 80 e
+`BASE_URL=http://catraca-recreio.nexosix.com.br`. Na catraca, DNS primário `1.1.1.1` (alguns
+roteadores bloqueiam respostas DNS com IP privado). **[HW]** validar na catraca: nome em
+`monitor.hostname`/`devices.ip`, HTTP pela internet e cache de DNS.
 
 ## Agente na escola (Windows, PowerShell como administrador)
 

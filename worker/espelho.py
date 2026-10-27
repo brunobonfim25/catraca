@@ -46,7 +46,22 @@ def empurrar():
         return 0
 
 
+def ip_lan():
+    """IP deste PC na rede da escola (o que o DNS da catraca aponta em operação normal)."""
+    if os.environ.get("AGENTE_IP_LAN"):
+        return os.environ["AGENTE_IP_LAN"]
+    import socket
+
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("1.1.1.1", 53))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+
+
 def ping():
     nuvem, token, _ = _cfg()
     p = service.pendentes()
-    service.ping(nuvem, token, {"versao": "1", "base_url": os.environ.get("BASE_URL", ""), "outbox_pendentes": p["n"], "cursor": service.estado_local()["cursor_nuvem"]})
+    service.ping(nuvem, token, {"versao": "1", "base_url": os.environ.get("BASE_URL", ""), "ip_lan": ip_lan(),
+                                "outbox_pendentes": p["n"], "cursor": service.estado_local()["cursor_nuvem"]})

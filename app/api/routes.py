@@ -33,6 +33,7 @@ def _dispositivo_do_payload(device_id):
     if not d:
         log.warning("notificação de device_id desconhecido: %s", device_id)
         abort(404, "dispositivo não cadastrado")
+    g.unidade_api_id = d["unidade_id"]
     return d
 
 
@@ -92,6 +93,7 @@ def online_device_is_alive(token):
     payload = request.get_json(silent=True) or {}
     d = dispositivos.por_device_id(payload.get("device_id")) if payload.get("device_id") else None
     if d:
+        g.unidade_api_id = d["unidade_id"]
         dispositivos.atualizar_contato(d["id"], "online")
     return ""
 

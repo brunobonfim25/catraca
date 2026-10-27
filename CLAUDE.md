@@ -172,9 +172,15 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   `Nexosix - so entrada` (só portal de entrada) → offline a catraca nega a saída dele e a
   recepção libera pelo portão PCD. Status `contingencia` fica no painel até o `operation_mode`.
 - **Internet fora**: agente segue decidindo com a cópia local; fila sobe depois.
-- **Fase 2** (redundância pedida pelo Bruno): com a catraca na VPN (client da Control iD),
-  a nuvem assume a catraca quando o agente some (`dispositivos.config.ip_vpn` já existe).
-  Depende de confirmar o client VPN no firmware do iDFace.
+- **Redundância** (27/10): a catraca sempre consulta o agente primeiro; a nuvem é reserva.
+  A catraca aponta para um **nome DNS** (`unidades.config.dns_nome`); o vigia da nuvem
+  (`app/espelho/failover.py`, worker da nuvem a cada 30 s) troca o registro na Cloudflare
+  para a nuvem quando o agente fica mudo (`FAILOVER_APOS_SEG`) e devolve para o IP da LAN
+  (vem no ping do agente) quando ele volta. A catraca inicia as conexões, então funciona
+  sem VPN; as escritas que a nuvem faz nesse período são marcadas com a unidade
+  (`g.unidade_api_id` nas rotas da catraca) e o agente puxa ao voltar. Agente escuta na
+  porta 80 (mesma da Cloudflare). [HW] nome/HTTP/cache DNS na catraca. VPN
+  (`dispositivos.config.ip_vpn`) continua como alternativa se o DNS não servir.
 - `MODO=unico` = tudo numa máquina (dev, testes, escola sem nuvem).
 
 ## 9. Como trabalhar com o Bruno

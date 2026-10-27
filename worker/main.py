@@ -42,6 +42,11 @@ def rodada_nuvem(contadores):
     enviados, falhas = notify.enviar_pendentes()
     if enviados or falhas:
         log.info("telegram: %d enviados, %d falhas", enviados, falhas)
+    if os.environ.get("MODO") == "nuvem" and _a_cada(contadores, "vigia", 30):
+        from app.espelho import failover
+
+        for u, acao in failover.verificar():
+            log.warning("vigia: failover %s em %s", acao, u["nome"])
     if _a_cada(contadores, "lgpd", 3600):
         n = lgpd.purgar_desligados()
         if n:

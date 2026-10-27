@@ -214,7 +214,8 @@ def snapshot(unidade):
 
 
 def registrar_ping(unidade, dados):
-    _marcar(unidade["id"], {"agente_visto_em": _agora(), "agente": {k: dados.get(k) for k in ("versao", "base_url", "outbox_pendentes", "cursor") if k in dados}})
+    agente = {k: dados.get(k) for k in ("versao", "base_url", "ip_lan", "outbox_pendentes", "cursor") if k in dados}
+    _marcar(unidade["id"], {"agente_visto_em": _agora(), "agente": agente})
 
 
 def _marcar(unidade_id, campos):

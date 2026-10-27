@@ -242,6 +242,7 @@ def unidade_config(unidade_id):
         cfg = {
             "espera_responsavel_min": int(f.get("espera_responsavel_min") or 15),
             "responsavel_resposta": f.get("responsavel_resposta") or "aguardar",
+            "dns_nome": (f.get("dns_nome") or "").strip().lower() or None,
         }
         db.execute("UPDATE unidades SET nome = %s, endereco = %s, fuso = %s, config = config || %s WHERE id = %s",
                    (f["nome"].strip(), f.get("endereco"), f.get("fuso") or "America/Sao_Paulo", json.dumps(cfg), unidade_id))

@@ -40,7 +40,7 @@ if (-not (Test-Path ".env")) {
         -replace "^SECRET_KEY=.*", "SECRET_KEY=$(Aleatorio 48)" `
         -replace "^MONITOR_TOKEN=.*", "MONITOR_TOKEN=$(Aleatorio 32)" | Set-Content .env
     $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.*" } | Select-Object -First 1).IPAddress
-    Write-Host "Criei .env — EDITE: DATABASE_URL, NUVEM_URL, ESPELHO_TOKEN e BASE_URL=http://${ip}:8000 (IP fixo deste PC, é pra onde a catraca liga)." -ForegroundColor Yellow
+    Write-Host "Criei .env — EDITE: DATABASE_URL, NUVEM_URL, ESPELHO_TOKEN e BASE_URL (http://${ip} se a catraca usa IP, ou http://catraca-<escola>.nexosix.com.br com a redundância por DNS)." -ForegroundColor Yellow
     notepad .env
     Read-Host "Salvou o .env? Pressione Enter para continuar"
 }
@@ -67,14 +67,16 @@ function Registrar($nome, $exe, $args) {
 Registrar "NexosixAgente" $py "serve.py"
 Registrar "NexosixWorker" $py "-m worker.main"
 
-# Firewall: a catraca precisa alcançar a porta 8000 deste PC
+# Firewall: a catraca precisa alcançar a porta do agente (PORT no .env; padrão 80)
+$porta = ((Get-Content .env | Where-Object { $_ -match "^PORT=" }) -replace "^PORT=", "")
+if (-not $porta) { $porta = "80" }
 netsh advfirewall firewall delete rule name="Nexosix Agente" | Out-Null
-netsh advfirewall firewall add rule name="Nexosix Agente" dir=in action=allow protocol=TCP localport=8000 | Out-Null
+netsh advfirewall firewall add rule name="Nexosix Agente" dir=in action=allow protocol=TCP localport=$porta | Out-Null
 
 # Backup diário às 23:30 (pg_dump → C:\nexosix\backups, mantém 14 dias)
 $acao = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$Pasta\deploy\windows\backup.ps1`""
 $gatilho = New-ScheduledTaskTrigger -Daily -At 23:30
 Register-ScheduledTask -TaskName "NexosixBackup" -Action $acao -Trigger $gatilho -RunLevel Highest -Force | Out-Null
 
-Write-Host "`nPronto. Status do agente: http://localhost:8000/agente  (logs em C:\nexosix\logs)." -ForegroundColor Green
+Write-Host "`nPronto. Status do agente: http://localhost:$porta/agente  (logs em C:\nexosix\logs)." -ForegroundColor Green
 Write-Host "Na nuvem: Catracas → cadastrar com o IP do iDFace → Testar conexão → Configurar Monitor. O agente executa em segundos."

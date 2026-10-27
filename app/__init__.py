@@ -11,8 +11,13 @@ def _unidade_da_requisicao():
     (o agente só puxa as linhas da unidade dele)."""
     from flask import has_request_context
 
-    if has_request_context() and getattr(g, "unidade", None):
-        return {"nexosix.unidade": g.unidade["id"]}
+    if has_request_context():
+        if getattr(g, "unidade", None):
+            return {"nexosix.unidade": g.unidade["id"]}
+        # chamadas da catraca (sem login): a unidade vem do dispositivo — importa no failover,
+        # quando a nuvem grava eventos que o agente vai puxar depois
+        if getattr(g, "unidade_api_id", None):
+            return {"nexosix.unidade": g.unidade_api_id}
     uid = getattr(db.contexto, "unidade_id", None)
     return {"nexosix.unidade": uid} if uid else {}
 

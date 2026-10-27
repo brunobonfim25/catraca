@@ -12,6 +12,9 @@
     </select>
     <small class="text-muted">Validar na catraca real qual opção dá a melhor experiência (ver integrations/controlid/README.md).</small>
   </div>
+  <div class="mb-3"><label class="form-label">Nome DNS da catraca (redundância)</label>
+    <input class="form-control" name="dns_nome" value="{{ un.config.get('dns_nome') or '' }}" placeholder="catraca-recreio.nexosix.com.br">
+    <small class="text-muted">A catraca aponta para este nome. Normalmente resolve para o IP do agente na escola; se o agente ficar mudo por 2 min, a nuvem troca o DNS para si mesma e assume a catraca; quando o agente volta, devolve. Requer Cloudflare configurada na nuvem.</small></div>
   <button class="btn btn-primary">Salvar</button>
 </form>
 {% endblock %}
