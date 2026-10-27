@@ -188,11 +188,10 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
 - **Nuvem no ar** (27/10/2026): Railway projeto `nexosix-acesso` (us-east4), web + worker +
   Postgres, `https://web-production-199c9.up.railway.app`. Empresa 1 = GEPPP; unidades
   Recreio (1) e Itaguaí (2). Superadmin = e-mail do Bruno.
-- **Telegram**: bot ainda não criado. Bruno vai criar com a conta pessoal dele no BotFather
-  (`/newbot`, nome "Nexosix Acesso", username terminado em `bot`) e **depois transferir para um
-  número da Nexosix** (BotFather permite transferir bot entre contas). Quando vier o token:
-  `TELEGRAM_BOT_TOKEN` + `TELEGRAM_BOT_USERNAME` no web e no worker do Railway, depois
-  `flask --app wsgi telegram-webhook`.
+- **Telegram**: bot **@NexosixAcessoBot** criado em 27/10 na conta pessoal do Bruno (depois
+  transferir para um número da Nexosix — BotFather permite). Token no Railway (web e worker),
+  webhook registrado em `/api/telegram/webhook`. Ativação dos responsáveis já funciona
+  (ficha do responsável → Ativar Telegram → QR).
 - **PC do agente**: HP EliteDesk 705 G1 DM (A8, 8 GB, SSD 120, Win 10 Pro, RJ45) comprado
   para teste. Instalação pelo `instalar-agente.cmd` do painel (Unidades → Config).
 - **Pendentes**: bot do Telegram; PC chegar e aparecer como "agente visto"; domínio +
