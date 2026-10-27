@@ -41,7 +41,12 @@ def lista():
     termo = request.args.get("q") or None
     turma_id = request.args.get("turma_id", type=int)
     pessoas = service.buscar(un["id"], termo, tipo, turma_id, incluir_desligados=request.args.get("desligados") == "1")
-    return render_template("pessoas/lista.html", pessoas=pessoas, tipo=tipo, termo=termo or "", turma_id=turma_id, turmas=_turmas(un["id"]))
+    pendencia = request.args.get("pendencia")
+    if pendencia == "foto":
+        pessoas = [p for p in pessoas if not p["tem_foto"] and p["tipo"] != "visitante"]
+    elif pendencia == "telegram":
+        pessoas = [p for p in pessoas if p["responsavel_id"] and not p["telegram_chat_id"]]
+    return render_template("pessoas/lista.html", pessoas=pessoas, tipo=tipo, termo=termo or "", turma_id=turma_id, turmas=_turmas(un["id"]), pendencia=pendencia)
 
 
 # ---------------------------------------------------------------- alunos

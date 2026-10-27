@@ -95,12 +95,12 @@ def test_ativacao_telegram_por_token(cliente, seed, app):
     assert cliente.get(f"/telegram/ativar/{rid}/qr.png").content_type == "image/png"
     telegram.enfileirar(seed["unidade"]["id"], rid, "msg antes da ativação")
     assert db.query("SELECT status FROM fila_notificacao", one=True)["status"] == "sem_chat"
-    resposta = telegram.processar_update({"message": {"chat": {"id": 555}, "text": f"/start {token}"}})
+    resposta = telegram.processar_update({"message": {"chat": {"id": 555}, "text": f"/start {token}"}})["texto"]
     assert "Avisos ativados" in resposta and "Maria" in resposta
     r = db.query("SELECT * FROM responsaveis WHERE id = %s", (rid,), one=True)
     assert r["telegram_chat_id"] == 555 and r["telegram_token"] is None
     assert db.query("SELECT status FROM fila_notificacao", one=True)["status"] == "pendente"  # destravou
-    assert "não é válido" in telegram.processar_update({"message": {"chat": {"id": 556}, "text": f"/start {token}"}})
+    assert telegram.processar_update({"message": {"chat": {"id": 556}, "text": f"/start {token}"}})["reply_markup"]["keyboard"][0][0]["request_contact"]  # token usado: cai no telefone
     # webhook exige o segredo
     assert cliente.post("/api/telegram/webhook", json={}).status_code == 403
     assert cliente.post("/api/telegram/webhook", json={"message": {"chat": {"id": 1}, "text": "oi"}}, headers={"X-Telegram-Bot-Api-Secret-Token": "seg-teste"}).status_code == 200
@@ -133,3 +133,33 @@ def test_fuso_invalido_cai_no_padrao(cliente, seed):
     assert db.query("SELECT fuso FROM unidades WHERE nome = 'Itaguaí'", one=True)["fuso"] == "America/Sao_Paulo"
     db.execute("UPDATE unidades SET fuso = 'invalido' WHERE id = %s", (seed["unidade"]["id"],))
     assert cliente.get("/painel/presenca").status_code == 200  # formatação de hora não quebra com fuso ruim
+
+
+def test_ativacao_pelo_link_da_escola_com_telefone(cliente, seed):
+    from app.notificacoes import telegram
+
+    rid = seed["ana"]["responsavel_id"]
+    db.execute("UPDATE responsaveis SET telegram_chat_id = NULL, telefone = '(21) 99999-0000' WHERE id = %s", (rid,))
+    # /start pelo link da escola (ou seco) pede o telefone
+    r = telegram.processar_update({"message": {"chat": {"id": 777}, "from": {"id": 777}, "text": "/start u1"}})
+    assert r["reply_markup"]["keyboard"][0][0]["request_contact"] is True
+    # contato de outra pessoa não vale
+    r = telegram.processar_update({"message": {"chat": {"id": 777}, "from": {"id": 777}, "contact": {"phone_number": "+5521999990000", "user_id": 999}}})
+    assert "próprio contato" in r["texto"]
+    # telefone desconhecido
+    r = telegram.processar_update({"message": {"chat": {"id": 777}, "from": {"id": 777}, "contact": {"phone_number": "+5521988887777", "user_id": 777}}})
+    assert "Não encontrei" in r["texto"]
+    # telefone do cadastro, com DDI e nono dígito
+    r = telegram.processar_update({"message": {"chat": {"id": 777}, "from": {"id": 777}, "contact": {"phone_number": "+5521999990000", "user_id": 777}}})
+    assert "Avisos ativados" in r["texto"] and "Maria" in r["texto"]
+    assert db.query("SELECT telegram_chat_id FROM responsaveis WHERE id = %s", (rid,), one=True)["telegram_chat_id"] == 777
+    # sem o nono dígito também casa
+    db.execute("UPDATE responsaveis SET telegram_chat_id = NULL, telefone = '21 9999-0000' WHERE id = %s", (rid,))
+    r = telegram.processar_update({"message": {"chat": {"id": 778}, "from": {"id": 778}, "contact": {"phone_number": "5521999990000", "user_id": 778}}})
+    assert "Avisos ativados" in r["texto"]
+    # telas: link da escola e WhatsApp
+    html = cliente.get(f"/telegram/ativar/{rid}").get_data(as_text=True)
+    assert "wa.me/5521" in html and "?start=u1" in html
+    assert cliente.get("/telegram/escola/1/qr.png").content_type == "image/png"
+    assert "?start=u1" in cliente.get("/unidades/1/config").get_data(as_text=True)
+    assert "Ana Silva" not in cliente.get("/pessoas/?tipo=responsavel&pendencia=telegram").get_data(as_text=True)

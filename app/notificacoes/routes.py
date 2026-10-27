@@ -28,7 +28,16 @@ def ativar(responsavel_id):
         abort(404)
     token = r["telegram_token"] or telegram.gerar_token(responsavel_id)
     link = telegram.link_ativacao(token)
-    return render_template("notificacoes/ativar.html", responsavel=r, link=link, bot=current_app.config.get("TELEGRAM_BOT_USERNAME"))
+    alunos = [a["nome"] for a in db.query("SELECT p.nome FROM aluno_responsavel ar JOIN alunos a ON a.id = ar.aluno_id JOIN pessoas p ON p.id = a.pessoa_id WHERE ar.responsavel_id = %s", (responsavel_id,))]
+    convite = telegram.mensagem_convite(r["nome"], g.unidade["nome"] if g.unidade else "", alunos, link)
+    return render_template("notificacoes/ativar.html", responsavel=r, link=link, bot=current_app.config.get("TELEGRAM_BOT_USERNAME"),
+                           whatsapp=telegram.link_whatsapp(r["telefone"], convite), link_escola=telegram.link_escola(r["unidade_id"]))
+
+
+@bp.get("/telegram/escola/<int:unidade_id>/qr.png")
+@exige("ver_presenca")
+def qr_escola(unidade_id):
+    return Response(telegram.qr_png(telegram.link_escola(unidade_id)), content_type="image/png")
 
 
 @bp.get("/telegram/ativar/<int:responsavel_id>/qr.png")

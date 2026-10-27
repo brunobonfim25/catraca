@@ -249,7 +249,9 @@ def unidade_config(unidade_id):
         auditar("config", "unidade", unidade_id, antes=un["config"], depois=cfg)
         flash("Unidade atualizada", "success")
         return redirect(url_for("painel.unidade_config", unidade_id=unidade_id))
-    return render_template("painel/unidade_config.html", un=un, fusos=fusos.FUSOS_BRASIL)
+    from ..notificacoes import telegram
+
+    return render_template("painel/unidade_config.html", un=un, fusos=fusos.FUSOS_BRASIL, link_escola=telegram.link_escola(un["id"]))
 
 
 @bp.post("/unidades/<int:unidade_id>/token-agente")

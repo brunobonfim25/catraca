@@ -17,6 +17,11 @@
   <div class="col-md-2 form-check mt-2 ms-3"><input class="form-check-input" type="checkbox" name="desligados" value="1" id="des" {{ 'checked' if request.args.get('desligados') == '1' }}><label class="form-check-label" for="des">incluir desligados</label></div>
   <div class="col-md-1"><button class="btn btn-outline-primary">Buscar</button></div>
 </form>
+<p class="small mb-2">Pendências:
+  <a class="{{ 'fw-bold' if pendencia == 'foto' }}" href="{{ url_for('pessoas.lista', pendencia='foto') }}">sem foto</a> ·
+  <a class="{{ 'fw-bold' if pendencia == 'telegram' }}" href="{{ url_for('pessoas.lista', tipo='responsavel', pendencia='telegram') }}">responsáveis sem Telegram</a>
+  {% if pendencia %} · <a href="{{ url_for('pessoas.lista') }}">limpar</a>{% endif %}
+</p>
 <table class="table table-sm bg-white align-middle">
   <thead><tr><th></th><th>Nome</th><th>Tipo</th><th>Turma / cargo</th><th>Status</th><th>Foto</th><th>Telegram</th></tr></thead>
   <tbody>

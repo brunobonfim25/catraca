@@ -1,21 +1,37 @@
 {% extends "base.html" %}
 {% block conteudo %}
-<h3>Ativar avisos no Telegram — {{ responsavel.nome }}</h3>
+<h3>Avisos no Telegram — {{ responsavel.nome }}</h3>
 {% if not bot %}<div class="alert alert-danger">TELEGRAM_BOT_USERNAME não configurado no servidor.</div>{% endif %}
-{% if responsavel.telegram_chat_id %}<div class="alert alert-success">Já ativado em {{ responsavel.telegram_ativado_em|data_hora }}. Gerar novo token só se o responsável trocou de celular.</div>{% endif %}
+{% if responsavel.telegram_chat_id %}<div class="alert alert-success">Ativado em {{ responsavel.telegram_ativado_em|data_hora }}. Gerar novo link só se o responsável trocou de celular.</div>{% endif %}
 <div class="row g-3">
-  <div class="col-md-4 text-center">
-    <img src="{{ url_for('notificacoes.qr', responsavel_id=responsavel.id) }}" class="img-fluid border rounded" alt="QR Code">
-    <p class="mt-2"><a href="{{ link }}" target="_blank">{{ link }}</a></p>
-    <form method="post" action="{{ url_for('notificacoes.novo_token', responsavel_id=responsavel.id) }}"><button class="btn btn-sm btn-outline-secondary">Gerar novo link</button></form>
+  <div class="col-md-4">
+    <div class="card"><div class="card-body text-center">
+      <h6>1. Responsável está aqui com o celular</h6>
+      <img src="{{ url_for('notificacoes.qr', responsavel_id=responsavel.id) }}" class="img-fluid border rounded" alt="QR Code" style="max-width:260px">
+      <p class="small mt-2 mb-1">Ele aponta a câmera do celular, abre o bot e toca em <b>Iniciar</b>. Pronto.</p>
+      <form method="post" action="{{ url_for('notificacoes.novo_token', responsavel_id=responsavel.id) }}"><button class="btn btn-sm btn-outline-secondary">Gerar novo link</button></form>
+    </div></div>
   </div>
-  <div class="col-md-6">
-    <ol>
-      <li>O responsável abre a câmera do celular e aponta para o QR Code (ou toca no link).</li>
-      <li>O Telegram abre o bot <b>@{{ bot }}</b> com o botão <b>Iniciar</b>. Ele toca.</li>
-      <li>O bot responde "Avisos ativados" e esta tela passa a mostrar ✔ (atualize).</li>
-    </ol>
-    <p class="text-muted small">O link é de uso único e fica ligado só a este responsável.</p>
+  <div class="col-md-4">
+    <div class="card"><div class="card-body">
+      <h6>2. Responsável não está aqui</h6>
+      {% if whatsapp %}
+        <a class="btn btn-success w-100 mb-2" target="_blank" href="{{ whatsapp }}">Enviar o link pelo WhatsApp ({{ responsavel.telefone }})</a>
+        <p class="small text-muted">Abre o WhatsApp da secretaria com a mensagem pronta. O responsável toca no link e em <b>Iniciar</b> — ativa em casa.</p>
+      {% else %}
+        <p class="small text-danger">Sem telefone válido no cadastro — edite o responsável para usar o WhatsApp.</p>
+      {% endif %}
+      <p class="small mb-0">Link individual: <a href="{{ link }}" target="_blank">{{ link }}</a></p>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card"><div class="card-body">
+      <h6>3. Link único da escola (cartaz, grupo da turma)</h6>
+      <p class="small">Qualquer responsável abre, toca em <b>Iniciar</b> e em <b>Compartilhar meu telefone</b>. O sistema casa o número com o cadastro. Vale para todos de uma vez — não precisa da secretaria.</p>
+      <p class="small"><a href="{{ link_escola }}" target="_blank">{{ link_escola }}</a></p>
+      <a class="small" href="{{ url_for('notificacoes.qr_escola', unidade_id=responsavel.unidade_id) }}" target="_blank">QR Code da escola para imprimir</a>
+      <p class="small text-muted mt-2 mb-0">Só funciona se o telefone do cadastro for o mesmo do Telegram do responsável.</p>
+    </div></div>
   </div>
 </div>
 {% endblock %}

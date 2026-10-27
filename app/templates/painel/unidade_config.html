@@ -17,6 +17,11 @@
     <small class="text-muted">A catraca aponta para este nome. Normalmente resolve para o IP do agente na escola; se o agente ficar mudo por 2 min, a nuvem troca o DNS para si mesma e assume a catraca; quando o agente volta, devolve. Requer Cloudflare configurada na nuvem.</small></div>
   <button class="btn btn-primary">Salvar</button>
 </form>
+<div class="card col-lg-6 mt-4"><div class="card-body">
+  <h6>Telegram — link único da escola</h6>
+  <p class="small mb-1">Divulgue no comunicado, no grupo das turmas ou num cartaz na recepção. O responsável toca, aperta <b>Iniciar</b> e <b>Compartilhar meu telefone</b>; o sistema ativa pelo número do cadastro.</p>
+  <code>{{ link_escola }}</code> · <a href="{{ url_for('notificacoes.qr_escola', unidade_id=un.id) }}" target="_blank">QR Code para imprimir</a>
+</div></div>
 {% if tem_permissao('gerir_dispositivos') %}
 <div class="card col-lg-6 mt-4"><div class="card-body">
   <h6>Agente da escola</h6>

@@ -50,3 +50,19 @@ def combinar_local(dia: date, hora: time, fuso=FUSO_PADRAO):
 
 def primeiro_nome(nome):
     return (nome or "").strip().split(" ")[0]
+
+
+def normalizar_telefone(valor):
+    """Só dígitos, sem o 55 do país. '(21) 99999-0000' e '+5521999990000' viram '21999990000'."""
+    digitos = "".join(c for c in (valor or "") if c.isdigit())
+    if len(digitos) > 11 and digitos.startswith("55"):
+        digitos = digitos[2:]
+    return digitos
+
+
+def mesmo_telefone(a, b):
+    """Compara DDD + 8 últimos dígitos: tolera o nono dígito ausente num dos lados."""
+    a, b = normalizar_telefone(a), normalizar_telefone(b)
+    if len(a) < 10 or len(b) < 10:
+        return False
+    return (a[:2], a[-8:]) == (b[:2], b[-8:])
