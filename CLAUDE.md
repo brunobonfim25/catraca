@@ -183,6 +183,22 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   (`dispositivos.config.ip_vpn`) continua como alternativa se o DNS não servir.
 - `MODO=unico` = tudo numa máquina (dev, testes, escola sem nuvem).
 
+## 8c. Situação operacional (atualizar a cada entrega)
+
+- **Nuvem no ar** (27/10/2026): Railway projeto `nexosix-acesso` (us-east4), web + worker +
+  Postgres, `https://web-production-199c9.up.railway.app`. Empresa 1 = GEPPP; unidades
+  Recreio (1) e Itaguaí (2). Superadmin = e-mail do Bruno.
+- **Telegram**: bot ainda não criado. Bruno vai criar com a conta pessoal dele no BotFather
+  (`/newbot`, nome "Nexosix Acesso", username terminado em `bot`) e **depois transferir para um
+  número da Nexosix** (BotFather permite transferir bot entre contas). Quando vier o token:
+  `TELEGRAM_BOT_TOKEN` + `TELEGRAM_BOT_USERNAME` no web e no worker do Railway, depois
+  `flask --app wsgi telegram-webhook`.
+- **PC do agente**: HP EliteDesk 705 G1 DM (A8, 8 GB, SSD 120, Win 10 Pro, RJ45) comprado
+  para teste. Instalação pelo `instalar-agente.cmd` do painel (Unidades → Config).
+- **Pendentes**: bot do Telegram; PC chegar e aparecer como "agente visto"; domínio +
+  Cloudflare (redundância por DNS); catraca chegar (roteiro em `integrations/controlid/README.md`);
+  módulo de mensalidade/cobrança (decidido deixar para depois do piloto).
+
 ## 9. Como trabalhar com o Bruno
 
 - Respostas diretas e práticas. Código pronto para rodar, compatível com Flask + psycopg2. Não propor reescrever o que já existe.
