@@ -11,11 +11,12 @@
   {% if tem_permissao('gerir_turmas') %}
   <div class="col-lg-5">
     {% if usuario.perfil == 'superadmin' %}
-    <div class="card mb-3"><div class="card-body"><h6>Nova empresa (rede de escolas)</h6>
+    <div class="card mb-3" id="nova-empresa"><div class="card-body"><h6>Novo colégio / rede de escolas (empresa)</h6>
+      <p class="small text-muted mb-2">Cada cliente é uma empresa; as escolas dele são unidades dentro dela.</p>
       <form method="post" action="{{ url_for('painel.empresa_nova') }}" class="d-flex gap-2"><input class="form-control" name="nome" placeholder="ex. Grupo Educacional Professor Pica Pau" required><button class="btn btn-outline-primary">Criar</button></form>
     </div></div>
     {% endif %}
-    <div class="card"><div class="card-body"><h6>Nova unidade</h6>
+    <div class="card" id="nova-unidade"><div class="card-body"><h6>Nova unidade (escola)</h6>
       <form method="post" action="{{ url_for('painel.unidade_nova') }}">
         {% if usuario.perfil == 'superadmin' %}<select class="form-select mb-2" name="empresa_id" required>{% for e in empresas %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}</select>{% endif %}
         <input class="form-control mb-2" name="nome" placeholder="ex. Recreio" required>
