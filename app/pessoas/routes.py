@@ -206,7 +206,7 @@ def detalhe(pessoa_id):
     return render_template(
         "pessoas/detalhe.html", p=p, responsaveis=responsaveis, alunos=alunos, eventos=eventos_rows, rotulos=tipos.ROTULOS,
         sync=dispositivos.status_sync_pessoa(pessoa_id), candidatos=candidatos, dias=DIAS, presenca=presenca,
-        consentimento=service.tem_consentimento(pessoa_id), avisos=avisos, fuso=un["fuso"],
+        consentimento=service.tem_consentimento(pessoa_id), autorizacoes=service.consentimentos(pessoa_id), avisos=avisos, fuso=un["fuso"],
     )
 
 

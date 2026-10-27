@@ -6,6 +6,12 @@ from tests.conftest import JPEG_OK
 from worker import notify
 
 
+def _clique(chat, opcao, de=None):
+    """Botão da autorização apertado no Telegram (callback_query)."""
+    return {"callback_query": {"id": "cb1", "from": {"id": de or chat}, "data": f"lgpd:{opcao}",
+                               "message": {"message_id": 9, "chat": {"id": chat}}}}
+
+
 def test_login_e_logout(app, seed):
     c = app.test_client()
     assert c.get("/painel").status_code == 302
@@ -97,8 +103,11 @@ def test_ativacao_telegram_por_token(cliente, seed, app):
     assert cliente.get(f"/telegram/ativar/{rid}/qr.png").content_type == "image/png"
     telegram.enfileirar(seed["unidade"]["id"], rid, "msg antes da ativação")
     assert db.query("SELECT status FROM fila_notificacao", one=True)["status"] == "sem_chat"
-    resposta = telegram.processar_update({"message": {"chat": {"id": 555}, "text": f"/start {token}"}})["texto"]
-    assert "Avisos ativados" in resposta and "Maria" in resposta
+    pergunta = telegram.processar_update({"message": {"chat": {"id": 555}, "text": f"/start {token}"}})
+    assert "autorização" in pergunta["texto"] and "Maria" in pergunta["texto"] and pergunta["reply_markup"]["inline_keyboard"]
+    assert db.query("SELECT telegram_chat_id FROM responsaveis WHERE id = %s", (rid,), one=True)["telegram_chat_id"] is None  # só ativa depois da resposta
+    resposta = telegram.processar_update(_clique(555, "tudo"))["texto"]
+    assert "avisos ativados" in resposta and "Maria" in resposta
     r = db.query("SELECT * FROM responsaveis WHERE id = %s", (rid,), one=True)
     assert r["telegram_chat_id"] == 555 and r["telegram_token"] is None
     assert db.query("SELECT status FROM fila_notificacao", one=True)["status"] == "pendente"  # destravou
@@ -153,12 +162,14 @@ def test_ativacao_pelo_link_da_escola_com_telefone(cliente, seed):
     assert "Não encontrei" in r["texto"]
     # telefone do cadastro, com DDI e nono dígito
     r = telegram.processar_update({"message": {"chat": {"id": 777}, "from": {"id": 777}, "contact": {"phone_number": "+5521999990000", "user_id": 777}}})
-    assert "Avisos ativados" in r["texto"] and "Maria" in r["texto"]
+    assert r["reply_markup"]["inline_keyboard"] and "Maria" in r["texto"]
+    r = telegram.processar_update(_clique(777, "tudo"))
+    assert "avisos ativados" in r["texto"] and "Maria" in r["texto"]
     assert db.query("SELECT telegram_chat_id FROM responsaveis WHERE id = %s", (rid,), one=True)["telegram_chat_id"] == 777
     # sem o nono dígito também casa
     db.execute("UPDATE responsaveis SET telegram_chat_id = NULL, telefone = '21 9999-0000' WHERE id = %s", (rid,))
-    r = telegram.processar_update({"message": {"chat": {"id": 778}, "from": {"id": 778}, "contact": {"phone_number": "5521999990000", "user_id": 778}}})
-    assert "Avisos ativados" in r["texto"]
+    telegram.processar_update({"message": {"chat": {"id": 778}, "from": {"id": 778}, "contact": {"phone_number": "5521999990000", "user_id": 778}}})
+    assert "avisos ativados" in telegram.processar_update(_clique(778, "tudo"))["texto"]
     # telas: link da escola e WhatsApp
     html = cliente.get(f"/telegram/ativar/{rid}").get_data(as_text=True)
     assert "wa.me/5521" in html and "?start=u1" in html

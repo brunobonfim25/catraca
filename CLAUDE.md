@@ -136,7 +136,7 @@ Todas as tabelas de domínio têm `unidade_id` (e `empresa_id` via unidade). Ín
 
 **Offline** → catraca segue Standalone → logs ficam nela → `collect.py` busca pendentes quando reconecta → dedupe → eventos com `ocorrido_em` real → Telegram atrasado com horário real → bloqueios feitos no painel chegam na reconexão.
 
-**Ativação do Telegram** → secretaria gera link `t.me/<bot>?start=<token>` + QR → responsável abre e dá `/start` → bot recebe token → grava `telegram_chat_id`.
+**Ativação do Telegram** → link individual `t.me/<bot>?start=<token>` (QR, WhatsApp, e-mail) ou link da escola (`?start=u<id>`, casa pelo telefone) → bot mostra a **autorização LGPD** com 3 botões (foto + avisos / só avisos / não autorizo) → resposta gravada em `consentimentos_lgpd` (escopo, aceito, canal `telegram`, texto exato visto) por aluno e pelo responsável → só então grava `telegram_chat_id`. Decisão de 27/10: o termo dos pais saiu do contrato e é pedido aqui; quem não usa Telegram assina em papel e a secretaria registra na ficha. Basta um dos pais; a recusa mais nova do mesmo responsável vence. Sem autorização, Alunos mostra "Falta autorização dos pais" antes de "Falta foto".
 
 ## 8. Plano de trabalho (ordem)
 

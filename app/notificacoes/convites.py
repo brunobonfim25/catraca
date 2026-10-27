@@ -27,7 +27,8 @@ TEXTO_PADRAO = (
     "Você vai receber no Telegram, na hora, cada entrada e saída de {alunos}. Os avisos são enviados pela escola ({escola}).\n\n"
     "Para ativar (leva 1 minuto):\n"
     "1. Instale o Telegram no celular, se ainda não tiver.\n"
-    "2. Toque no link abaixo e depois em \"Iniciar\".\n\n"
+    "2. Toque no link abaixo e depois em \"Iniciar\".\n"
+    "3. Responda, no próprio Telegram, se autoriza o uso da foto na catraca.\n\n"
     "{link}\n\n"
     "É gratuito. Só a escola envia mensagens por esse canal."
 )

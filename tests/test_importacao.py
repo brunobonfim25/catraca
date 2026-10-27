@@ -85,7 +85,7 @@ def test_planejar_e_executar_cria_turmas_alunos_e_uma_mae_para_dois_irmaos(seed)
     carla = db.query("SELECT r.id, r.email FROM responsaveis r JOIN pessoas p ON p.id = r.pessoa_id WHERE p.nome = 'Carla Mendes'")
     assert len(carla) == 1 and carla[0]["email"] == "carla@exemplo.com"
     assert db.query("SELECT count(*) AS n FROM aluno_responsavel WHERE responsavel_id = %s", (carla[0]["id"],), one=True)["n"] == 2
-    assert db.query("SELECT count(*) AS n FROM consentimentos_lgpd", one=True)["n"] == 4  # 2 alunos + 2 responsáveis novos
+    assert db.query("SELECT count(*) AS n FROM consentimentos_lgpd WHERE canal = 'importacao'", one=True)["n"] == 4  # 2 alunos + 2 responsáveis novos
 
     # reimportar a mesma planilha não duplica nada
     de_novo = imp.planejar(un, regs)["resumo"]

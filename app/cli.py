@@ -38,6 +38,16 @@ def registrar_comandos(app):
                 (email.lower(), generate_password_hash(senha)),
             )
             click.echo(f"superadmin criado: {email}")
+        # Webhook do Telegram a cada deploy: o bot passou a usar botões (autorização dos pais),
+        # que chegam como callback_query — sem re-registrar, o Telegram nem manda o clique.
+        base = app.config.get("BASE_URL", "")
+        if app.config.get("TELEGRAM_BOT_TOKEN") and base.startswith("https://") and app.config.get("MODO") == "nuvem":
+            from .notificacoes.telegram import registrar_webhook
+
+            try:
+                click.echo(f"webhook do Telegram: {registrar_webhook()}")
+            except Exception as e:  # noqa: BLE001 — Telegram fora não pode impedir o site de subir
+                click.echo(f"webhook do Telegram falhou: {e}")
 
     @app.cli.command("configurar-local")
     @click.option("--unidade-id", type=int, default=None, help="id da unidade na nuvem (padrão: UNIDADE_ID do .env)")

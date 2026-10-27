@@ -8,7 +8,10 @@
       <p class="mb-1">{{ p.tipo }} {% if p.turma_nome %}· {{ p.turma_nome }}{% endif %} {% if p.cargo %}· {{ p.cargo }}{% endif %}</p>
       <span class="badge bg-{{ {'ativo':'success','bloqueado':'warning','desligado':'secondary'}[p.status] }}">{{ p.status }}</span>
       {% if presenca %}<span class="badge bg-{{ 'primary' if presenca.dentro else 'light text-dark' }}">{{ 'dentro desde ' + presenca.desde|hora(fuso) if presenca.dentro else 'fora' }}</span>{% endif %}
-      {% if not consentimento and p.tipo != 'visitante' %}<div class="alert alert-warning py-1 mt-2 small">Sem consentimento LGPD registrado.</div>{% endif %}
+      {% if not consentimento and p.tipo != 'visitante' %}<div class="alert alert-warning py-1 mt-2 small">Sem autorização vigente para a foto (LGPD).{% if p.tipo == 'aluno' %} O responsável autoriza ao ativar o Telegram, ou registre o termo em papel abaixo.{% endif %}</div>{% endif %}
+      {% if autorizacoes %}<ul class="list-unstyled small text-start mt-2 mb-0">
+        {% for c in autorizacoes[:6] %}<li>{{ '✔' if c.aceito else '✖' }} {{ 'Foto' if (c.escopo or 'biometria') == 'biometria' else 'Avisos' }} · {{ c.assinado_por }} · {{ {'telegram': 'pelo Telegram', 'papel': 'termo em papel', 'importacao': 'declarado na importação'}.get(c.canal, c.canal or 'termo em papel') }} · {{ c.criado_em|data_hora(fuso) }}</li>{% endfor %}
+      </ul>{% endif %}
       <div class="mt-3 d-flex flex-wrap gap-1 justify-content-center">
         {% if tem_permissao('cadastrar_pessoas') and p.tipo != 'visitante' %}<a class="btn btn-sm btn-primary" href="{{ url_for('pessoas.foto', pessoa_id=p.id) }}">{{ 'Refazer foto' if p.tem_foto else 'Tirar foto' }}</a>{% endif %}
         {% if tem_permissao('cadastrar_pessoas') %}

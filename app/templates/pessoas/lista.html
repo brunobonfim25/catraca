@@ -59,7 +59,7 @@
       {% if situacoes %}
       <td>{% if p.status != 'ativo' %}<span class="badge bg-secondary">{{ p.status }}</span>{% elif st %}
         {% if st.chave in ('falta_foto', 'erro_catraca') %}<a class="situacao {{ st.classe }}" href="{{ url_for('pessoas.foto', pessoa_id=p.id) }}" title="{{ st.erro or '' }}">{{ st.texto }} →</a>
-        {% elif st.chave in ('falta_responsavel', 'responsavel_sem_foto') %}<a class="situacao {{ st.classe }}" href="{{ url_for('pessoas.detalhe', pessoa_id=p.id) }}">{{ st.texto }} →</a>
+        {% elif st.chave in ('falta_autorizacao', 'falta_responsavel', 'responsavel_sem_foto') %}<a class="situacao {{ st.classe }}" href="{{ url_for('pessoas.detalhe', pessoa_id=p.id) }}">{{ st.texto }} →</a>
         {% else %}<span class="situacao {{ st.classe }}">{{ '✔ ' if st.classe == 'pronto' }}{{ st.texto }}</span>{% endif %}
       {% endif %}</td>
       <td><small>{% if st and st.n_resp %}<span class="{{ 'text-success' if st.n_resp_telegram == st.n_resp else ('text-warning' if st.n_resp_telegram else 'text-danger') }}">Telegram {{ st.n_resp_telegram }}/{{ st.n_resp }}</span>{% elif st %}<span class="text-muted">sem responsável</span>{% endif %}</small></td>

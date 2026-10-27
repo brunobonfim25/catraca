@@ -1,4 +1,5 @@
 """Convites em massa (WhatsApp e e-mail) e a coluna "Pronto para a catraca?"."""
+from datetime import date
 from urllib.parse import parse_qs, urlparse
 
 from app import db
@@ -98,6 +99,8 @@ def test_pronto_para_a_catraca(seed, sincronizado, cliente):
     assert s[seed["maria"]["pessoa_id"]]["chave"] == "pronto"  # foto ok na catraca, mãe com foto
     assert s[seed["pedro"]["pessoa_id"]]["chave"] == "pronto"  # turma com saída livre: não precisa de responsável
     nova_pid, _ = pessoas.criar_aluno(un, "Bia Nova", seed["turma"]["id"])
+    assert pessoas.situacao_alunos(un)[nova_pid]["chave"] == "falta_autorizacao"  # antes de tudo: LGPD
+    pessoas.registrar_consentimento(nova_pid, "Mãe da Bia", date.today())
     assert pessoas.situacao_alunos(un)[nova_pid]["chave"] == "falta_foto"
     pessoas.salvar_foto(nova_pid, JPEG_OK + b"\x09")
     assert pessoas.situacao_alunos(un)[nova_pid]["chave"] == "falta_responsavel"  # Pré 1 exige responsável

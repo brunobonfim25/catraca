@@ -4,7 +4,7 @@ Requer PostgreSQL acessível em DATABASE_URL_TEST (padrão postgresql://postgres
 """
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -139,6 +139,9 @@ def seed(ctx, simulador):
     pessoas.vincular(maria_aid, ana_rid, "mãe", "sempre")
     db.execute("UPDATE responsaveis SET telegram_chat_id = 111 WHERE id = %s", (ana_rid,))
     joao_pid, _ = pessoas.criar_funcionario(un["id"], "João Porteiro", "porteiro", {})
+    # termo em papel da Maria e do Pedro: sem ele a situação do aluno é "falta autorização"
+    pessoas.registrar_consentimento(maria_pid, "Ana Silva", date.today())
+    pessoas.registrar_consentimento(pedro_pid, "Responsável do Pedro", date.today())
     pessoas.salvar_foto(maria_pid, JPEG_OK)
     pessoas.salvar_foto(ana_pid, JPEG_OUTRO)
     pessoas.salvar_foto(pedro_pid, JPEG_OK + b"\x03")  # João fica sem foto de propósito

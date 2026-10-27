@@ -449,7 +449,8 @@ def executar(unidade_id, registros, consentimento=None):
                     service.vincular(aluno_id, resp_id, r["parentesco"] or None)
         if consentimento:
             for pessoa_id in novas_pessoas:
-                service.registrar_consentimento(pessoa_id, consentimento["assinado_por"], date.today(), observacao=consentimento.get("observacao"))
+                service.registrar_consentimento(pessoa_id, consentimento["assinado_por"], date.today(), observacao=consentimento.get("observacao"),
+                                                canal="importacao")
     return plano["resumo"]
 
 

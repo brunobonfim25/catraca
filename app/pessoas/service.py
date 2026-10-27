@@ -225,21 +225,47 @@ def alunos_do_responsavel(responsavel_id):
     )
 
 
-def registrar_consentimento(pessoa_id, assinado_por, assinado_em, arquivo_nome=None, arquivo=None, observacao=None):
+def registrar_consentimento(pessoa_id, assinado_por, assinado_em, arquivo_nome=None, arquivo=None, observacao=None,
+                            escopo="biometria", aceito=True, canal="papel", responsavel_id=None, texto=None):
+    """Aceite OU recusa (aceito=False). Canal telegram = respondido pelo responsável no bot, com
+    o texto exato que ele viu; papel/importacao = a escola declara que tem o termo assinado."""
     db.execute(
-        "INSERT INTO consentimentos_lgpd (pessoa_id, assinado_por, assinado_em, arquivo_nome, arquivo, observacao) VALUES (%s,%s,%s,%s,%s,%s)",
-        (pessoa_id, assinado_por, assinado_em, arquivo_nome, psycopg_bytes(arquivo) if arquivo else None, observacao),
+        "INSERT INTO consentimentos_lgpd (pessoa_id, assinado_por, assinado_em, arquivo_nome, arquivo, observacao, escopo, aceito, canal, responsavel_id, texto) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        (pessoa_id, assinado_por, assinado_em, arquivo_nome, psycopg_bytes(arquivo) if arquivo else None, observacao,
+         escopo, aceito, canal, responsavel_id, texto),
     )
-    auditar("consentimento", "pessoa", pessoa_id, depois={"assinado_por": assinado_por, "assinado_em": str(assinado_em)})
+    auditar("consentimento", "pessoa", pessoa_id, depois={"assinado_por": assinado_por, "assinado_em": str(assinado_em),
+                                                          "escopo": escopo, "aceito": aceito, "canal": canal})
+
+
+# Consentimento de foto válido: um aceite sem recusa MAIS NOVA da mesma fonte (o mesmo
+# responsável, ou o papel). Basta um dos pais (LGPD art. 14 §1º). escopo NULL = registro antigo.
+_BIOMETRIA_VALIDA = (
+    "SELECT bool_or(c.aceito AND NOT EXISTS (SELECT 1 FROM consentimentos_lgpd d WHERE d.pessoa_id = c.pessoa_id "
+    " AND coalesce(d.escopo, 'biometria') = 'biometria' AND d.responsavel_id IS NOT DISTINCT FROM c.responsavel_id "
+    " AND d.id > c.id AND NOT d.aceito)) AS ok, bool_or(NOT c.aceito) AS recusa "
+    "FROM consentimentos_lgpd c WHERE c.pessoa_id = {pessoa} AND coalesce(c.escopo, 'biometria') = 'biometria'"
+)
 
 
 def tem_consentimento(pessoa_id):
-    return db.query("SELECT 1 FROM consentimentos_lgpd WHERE pessoa_id = %s LIMIT 1", (pessoa_id,), one=True) is not None
+    """Autorização vigente para usar a foto (biometria) desta pessoa."""
+    r = db.query(_BIOMETRIA_VALIDA.format(pessoa="%s"), (pessoa_id,), one=True)
+    return bool(r and r["ok"])
+
+
+def consentimentos(pessoa_id):
+    """Histórico para a ficha: quem respondeu, quando, por onde e o quê."""
+    return db.query("SELECT id, assinado_por, assinado_em, escopo, aceito, canal, criado_em, arquivo_nome IS NOT NULL AS tem_arquivo "
+                    "FROM consentimentos_lgpd WHERE pessoa_id = %s ORDER BY id DESC", (pessoa_id,))
 
 
 # ---------------------------------------------------------------- pronto para a catraca?
 
 SITUACOES = {
+    "falta_autorizacao": ("falta", "Falta autorização dos pais"),
+    "foto_recusada": ("cinza", "Pais não autorizaram a foto — entra pela recepção"),
     "falta_foto": ("falta", "Falta foto"),
     "falta_responsavel": ("falta", "Falta responsável"),
     "erro_catraca": ("falta", "Erro na catraca — refazer foto"),
@@ -253,7 +279,10 @@ def _situacao(r):
     """Ordem = o que trava primeiro. Responsável sem foto conta porque, na saída "só com
     responsável", é a face dele no leitor de fora que libera a criança."""
     precisa = (not r["saida_autonoma"]) if r["saida_autonoma"] is not None else bool(r["exige_responsavel_saida"])
-    if not r["tem_foto"]:
+    if not r["consentimento_ok"]:
+        # sem autorização a foto nem deveria ser tirada (LGPD): é a primeira coisa a resolver
+        chave = "foto_recusada" if r["consentimento_recusa"] else "falta_autorizacao"
+    elif not r["tem_foto"]:
         chave = "falta_foto"
     elif precisa and not r["n_resp"]:
         chave = "falta_responsavel"
@@ -277,8 +306,10 @@ def situacao_alunos(unidade_id):
     rows = db.query(
         "SELECT a.pessoa_id, a.saida_autonoma, t.exige_responsavel_saida, (pf.pessoa_id IS NOT NULL) AS tem_foto, "
         "coalesce(rs.n, 0) AS n_resp, coalesce(rs.n_foto, 0) AS n_resp_foto, coalesce(rs.n_tg, 0) AS n_resp_telegram, "
-        "coalesce(ds.n, 0) AS n_disp, coalesce(ds.erro, 0) AS disp_erro, coalesce(ds.pendente, 0) AS disp_pendente, ds.msg_erro "
+        "coalesce(ds.n, 0) AS n_disp, coalesce(ds.erro, 0) AS disp_erro, coalesce(ds.pendente, 0) AS disp_pendente, ds.msg_erro, "
+        "coalesce(cs.ok, false) AS consentimento_ok, coalesce(cs.recusa, false) AS consentimento_recusa "
         "FROM alunos a JOIN pessoas p ON p.id = a.pessoa_id JOIN turmas t ON t.id = a.turma_id "
+        f"LEFT JOIN LATERAL ({_BIOMETRIA_VALIDA.format(pessoa='p.id')}) cs ON true "
         "LEFT JOIN pessoa_fotos pf ON pf.pessoa_id = p.id "
         "LEFT JOIN LATERAL (SELECT count(*) AS n, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM pessoa_fotos f WHERE f.pessoa_id = rp.id)) AS n_foto, "
         "  count(*) FILTER (WHERE r.telegram_chat_id IS NOT NULL) AS n_tg FROM aluno_responsavel ar "
