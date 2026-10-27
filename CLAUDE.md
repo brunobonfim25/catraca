@@ -217,10 +217,27 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   E-mail precisa de conta Brevo (grátis, 300/dia) + `BREVO_API_KEY` e `EMAIL_REMETENTE` no
   web e no worker — Railway bloqueia SMTP, por isso é API. Faltam: fase 3 (cadastro guiado,
   checklist de implantação, Configuração passo a passo com Avançado), fase 4 (fila de fotos).
+- **Revisão de 27/10 aplicada** (5 ondas, testes em `tests/test_revisao_onda{1..5}.py`; códigos
+  S/E/C/A/O do documento de revisão): acesso entre escolas (`app/escopo.py`), espelho
+  confiável (migration 009, `REGRAS_DO_AGENTE`, cursor `(xid,id)`, quarentena), catraca que
+  reseta (010: época dos registros, cursor da coleta, `reconciliar`), avisos e consentimento
+  (011: chat decidido no envio, link com validade + telefone, recusa dos pais vence a escola),
+  segurança (012: CSRF em todo POST de navegador — `seguranca.py`, bloqueio de login,
+  sessão cai ao trocar a senha, cabeçalhos) e operação (trava nas migrations, alertas em
+  `app/alertas.py`, `/health/worker`, exportação da escola, `docs/ROTEIRO-RECEPCAO.md`).
+  Regras que valem daqui pra frente: **toda rota que recebe id usa `escopo.da_unidade`**;
+  tabela nova que o agente escreve entra em `REGRAS_DO_AGENTE`; formulário novo não precisa
+  de nada (o token CSRF é injetado pelo `base.html`), mas rota POST chamada por máquina entra
+  em `seguranca.SEM_CSRF`.
+- **Variáveis novas na nuvem**: `FAILOVER_DOMINIO` (ex.: `nexosix.com.br`, quando houver
+  domínio), `FAILOVER_VOLTA_SEG` (120), `ALERTA_TELEGRAM_CHAT` (chat do Bruno no bot, para
+  os alertas). `SECRET_KEY` fraca impede a nuvem de subir.
 - **Pendentes**: planilha de alunos da escola (mandar o modelo); conta Brevo para o convite
-  por e-mail; bot do Telegram; PC chegar e aparecer como "agente visto"; domínio +
-  Cloudflare (redundância por DNS); catraca chegar (roteiro em `integrations/controlid/README.md`);
-  módulo de mensalidade/cobrança (decidido deixar para depois do piloto).
+  por e-mail; PC chegar e aparecer como "agente visto"; domínio + Cloudflare (redundância
+  por DNS) + DNS local no roteador da escola; catraca chegar (roteiro em
+  `integrations/controlid/README.md`); ligar backup do Postgres no Railway; repositório
+  pode virar privado (o instalador baixa o código da nuvem); módulo de mensalidade/cobrança
+  (decidido deixar para depois do piloto).
 
 ## 9. Como trabalhar com o Bruno
 

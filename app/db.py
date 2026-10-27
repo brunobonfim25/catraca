@@ -174,24 +174,48 @@ def listar_migrations(diretorio=_MIGRATIONS_DIR):
     return [(n, os.path.join(diretorio, n)) for n in nomes]
 
 
+_TRAVA_MIGRATIONS = 7342001
+
+
 def migrar(diretorio=_MIGRATIONS_DIR, log=print):
     """Aplica os SQL numerados ainda não registrados em schema_migrations. Cada arquivo
-    roda numa transação própria: se um falhar, os anteriores ficam e o erro aparece."""
-    with transacao() as cur:
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations ("
-            " versao text PRIMARY KEY, aplicado_em timestamptz NOT NULL DEFAULT now())"
-        )
-    aplicadas = {r["versao"] for r in query("SELECT versao FROM schema_migrations")}
+    roda numa transação própria: se um falhar, os anteriores ficam e o erro aparece.
+
+    Revisão (O6): o site e o worker sobem juntos no deploy; o worker começava a trabalhar
+    antes da migration nova (tabela inexistente) e os dois podiam migrar ao mesmo tempo.
+    Agora quem migra segura uma trava do banco e os dois chamam isto ao subir: o segundo
+    espera o primeiro terminar e não acha nada a fazer."""
     novas = 0
-    for nome, caminho in listar_migrations(diretorio):
-        if nome in aplicadas:
-            continue
-        with open(caminho, encoding="utf-8") as f:
-            sql = f.read()
-        with transacao() as cur:
-            cur.execute(sql)
-            cur.execute("INSERT INTO schema_migrations (versao) VALUES (%s)", (nome,))
-        log(f"migration aplicada: {nome}")
-        novas += 1
+    with conexao() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        try:
+            cur.execute("SELECT pg_advisory_lock(%s)", (_TRAVA_MIGRATIONS,))
+            cur.execute("CREATE TABLE IF NOT EXISTS schema_migrations (versao text PRIMARY KEY, aplicado_em timestamptz NOT NULL DEFAULT now())")
+            conn.commit()
+            cur.execute("SELECT versao FROM schema_migrations")
+            aplicadas = {r["versao"] for r in cur.fetchall()}
+            conn.commit()
+            for nome, caminho in listar_migrations(diretorio):
+                if nome in aplicadas:
+                    continue
+                with open(caminho, encoding="utf-8") as f:
+                    sql = f.read()
+                try:
+                    for chave, valor in gucs.items():  # outbox ligado: o que a migration muda chega no agente
+                        cur.execute(f"SET LOCAL {chave} = %s", (valor,))
+                    cur.execute(sql)
+                    cur.execute("INSERT INTO schema_migrations (versao) VALUES (%s)", (nome,))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+                log(f"migration aplicada: {nome}")
+                novas += 1
+        finally:
+            try:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (_TRAVA_MIGRATIONS,))
+                conn.commit()
+            except psycopg2.Error:
+                conn.rollback()
+            cur.close()
     return novas

@@ -50,6 +50,11 @@
     <button class="btn btn-sm btn-primary">Salvar convite</button>
   </form>
 </div></div>
+<div class="card col-lg-6 mt-4"><div class="card-body">
+  <h6>Dados da escola</h6>
+  <p class="small mb-2">Baixe tudo em planilhas (alunos, responsáveis, vínculos, turmas, autorizações e os acessos dos últimos 12 meses). As fotos não saem do sistema.</p>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('painel.unidade_exportar', unidade_id=un.id) }}">Exportar dados (.zip)</a>
+</div></div>
 {% if tem_permissao('gerir_dispositivos') %}
 <div class="card col-lg-6 mt-4"><div class="card-body">
   <h6>Servidor da escola</h6>

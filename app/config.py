@@ -33,6 +33,7 @@ class Config:
     # Na nuvem (HTTPS) o cookie de sessão não deve viajar em HTTP
     SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
     PERMANENT_SESSION_LIFETIME = 60 * 60 * 10
+    CSRF_ATIVO = os.environ.get("CSRF_ATIVO", "1") == "1"
 
     # Onde este processo roda:
     #   nuvem → o sistema: painel, cadastro, Telegram; manda comandos e cadastro pro agente
@@ -55,3 +56,5 @@ class TestConfig(Config):
     MODO = "unico"
     NUVEM_URL = ""
     ESPELHO_TOKEN = ""
+    # os testes postam formulários direto; test_revisao_onda5 liga o CSRF onde precisa
+    CSRF_ATIVO = False

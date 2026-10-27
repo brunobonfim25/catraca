@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block conteudo %}
+{% if worker_parado %}<div class="alert alert-danger"><b>O processo de avisos da nuvem está parado</b>: os pais não estão recebendo mensagens e a redundância não está vigiando as escolas. Veja o serviço "worker" no Railway.</div>{% endif %}
+{% if problemas %}<div class="alert alert-warning"><b>Atenção agora:</b><ul class="mb-0">{% for k, t in problemas.items() %}<li>{{ t }}</li>{% endfor %}</ul></div>{% endif %}
 <div class="d-flex justify-content-between align-items-center mb-2">
   <div>
     <h3 class="mb-0">{{ 'Clientes' if usuario.perfil == 'superadmin' else 'Todas as escolas' }}</h3>

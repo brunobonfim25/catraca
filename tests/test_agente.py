@@ -58,7 +58,7 @@ def nuvem(app):
     import socket
 
     s = socket.socket(); s.bind(("127.0.0.1", 0)); porta = s.getsockname()[1]; s.close()
-    env = {**os.environ, "MODO": "nuvem", "DATABASE_URL": NUVEM_DB, "PORT": str(porta), "SECRET_KEY": "nuvem", "MONITOR_TOKEN": "tok-nuvem-monitor",
+    env = {**os.environ, "MODO": "nuvem", "DATABASE_URL": NUVEM_DB, "PORT": str(porta), "SECRET_KEY": "nuvem-chave-de-teste-com-32-caracteres!", "CSRF_ATIVO": "0", "MONITOR_TOKEN": "tok-nuvem-monitor",
            "BASE_URL": f"http://127.0.0.1:{porta}", "TELEGRAM_WEBHOOK_SECRET": "x"}
     proc = subprocess.Popen([sys.executable, "serve.py"], cwd=RAIZ, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     url = f"http://127.0.0.1:{porta}"

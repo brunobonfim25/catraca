@@ -57,7 +57,13 @@ def rede():
         cfg = u["config"] or {}
         linhas.append({"unidade": u, "dentro": presenca.get(u["id"], 0), "alunos": alunos.get(u["id"], 0), "hoje": hoje.get(u["id"]),
                        "dispositivos": disps.get(u["id"], []), "agente_em": cfg.get("agente_visto_em"), "agente_erro": cfg.get("agente_erro")})
-    return render_template("painel/rede.html", linhas=linhas)
+    from flask import current_app
+
+    from .. import alertas
+
+    worker_parado = current_app.config.get("MODO") == "nuvem" and not alertas.worker_ok("nuvem")
+    return render_template("painel/rede.html", linhas=linhas, worker_parado=worker_parado,
+                           problemas=alertas.problemas() if g.usuario["perfil"] == "superadmin" else {})
 
 
 @bp.get("/painel")
@@ -331,6 +337,60 @@ def unidade_convite(unidade_id):
     auditar("config_convite", "unidade", unidade_id, depois=cfg)
     flash("Convite atualizado", "success")
     return redirect(url_for("painel.unidade_config", unidade_id=unidade_id) + "#convite")
+
+
+_EXPORTACAO = {
+    "turmas.csv": "SELECT nome, turno, exige_responsavel_saida, tolerancia_entrada_min, entrada_inicio, entrada_fim, saida_inicio, saida_fim, ativo "
+                  "FROM turmas WHERE unidade_id = %(u)s ORDER BY nome",
+    "alunos.csv": "SELECT p.id, p.nome, t.nome AS turma, a.matricula, p.status, a.saida_autonoma, p.criado_em AT TIME ZONE %(f)s AS cadastrado_em, "
+                  "p.desligado_em AT TIME ZONE %(f)s AS desligado_em FROM alunos a JOIN pessoas p ON p.id = a.pessoa_id "
+                  "LEFT JOIN turmas t ON t.id = a.turma_id WHERE p.unidade_id = %(u)s ORDER BY t.nome, p.nome",
+    "responsaveis.csv": "SELECT p.id, p.nome, r.telefone, r.email, p.status, (r.telegram_chat_id IS NOT NULL) AS telegram_ativo "
+                        "FROM responsaveis r JOIN pessoas p ON p.id = r.pessoa_id WHERE p.unidade_id = %(u)s ORDER BY p.nome",
+    "vinculos.csv": "SELECT pa.nome AS aluno, pr.nome AS responsavel, ar.parentesco, ar.regra, ar.dias_semana FROM aluno_responsavel ar "
+                    "JOIN alunos a ON a.id = ar.aluno_id JOIN pessoas pa ON pa.id = a.pessoa_id JOIN responsaveis r ON r.id = ar.responsavel_id "
+                    "JOIN pessoas pr ON pr.id = r.pessoa_id WHERE pa.unidade_id = %(u)s ORDER BY pa.nome",
+    "funcionarios.csv": "SELECT p.id, p.nome, f.cargo, p.status FROM funcionarios f JOIN pessoas p ON p.id = f.pessoa_id WHERE p.unidade_id = %(u)s ORDER BY p.nome",
+    "consentimentos.csv": "SELECT p.nome AS pessoa, coalesce(c.escopo, 'biometria') AS escopo, c.aceito, c.canal, c.assinado_por, c.assinado_em, "
+                          "c.criado_em AT TIME ZONE %(f)s AS registrado_em FROM consentimentos_lgpd c JOIN pessoas p ON p.id = c.pessoa_id "
+                          "WHERE p.unidade_id = %(u)s ORDER BY c.id",
+    "eventos_12_meses.csv": "SELECT e.ocorrido_em AT TIME ZONE %(f)s AS quando, p.nome AS pessoa, e.tipo, e.sentido, d.nome AS catraca, "
+                            "pc.nome AS com_quem, e.justificativa, ua.nome AS autorizado_por FROM eventos e LEFT JOIN pessoas p ON p.id = e.pessoa_id "
+                            "LEFT JOIN pessoas pc ON pc.id = e.correlacao_id LEFT JOIN dispositivos d ON d.id = e.dispositivo_id "
+                            "LEFT JOIN usuarios_admin ua ON ua.id = e.autorizado_por WHERE e.unidade_id = %(u)s AND e.ocorrido_em > now() - interval '12 months' "
+                            "ORDER BY e.ocorrido_em",
+}
+
+
+@bp.get("/unidades/<int:unidade_id>/exportar.zip")
+@exige("configurar_escola")
+def unidade_exportar(unidade_id):
+    """Revisão (O11): a escola (ou o fim do contrato) precisa levar os dados dela. Planilhas
+    CSV abertas no Excel; fotos ficam de fora (dado biométrico não sai do sistema)."""
+    import csv
+    import io
+    import zipfile
+
+    from flask import Response
+
+    un = unidade_atual_ou_403()
+    if un["id"] != unidade_id:
+        abort(404)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for nome, sql in _EXPORTACAO.items():
+            linhas = db.query(sql, {"u": unidade_id, "f": un["fuso"]})
+            texto = io.StringIO()
+            w = csv.writer(texto, delimiter=";")
+            if linhas:
+                w.writerow(linhas[0].keys())
+                for r in linhas:
+                    w.writerow(["" if v is None else v for v in r.values()])
+            z.writestr(nome, "\ufeff" + texto.getvalue())  # BOM: o Excel abre com acento certo
+    auditar("exportar_dados", "unidade", unidade_id)
+    nome = "".join(c for c in un["nome"] if c.isalnum()) or "escola"
+    return Response(buf.getvalue(), content_type="application/zip",
+                    headers={"Content-Disposition": f"attachment; filename=nexosix-{nome}.zip", "Cache-Control": "no-store"})
 
 
 @bp.post("/unidades/<int:unidade_id>/token-agente")

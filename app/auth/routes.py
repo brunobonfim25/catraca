@@ -1,13 +1,15 @@
 """Login/logout, troca de unidade, gestão de usuários do painel."""
 from urllib.parse import urlparse
 
-from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
+from datetime import datetime, timezone
+
+from flask import Blueprint, current_app, flash, g, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .. import db
 from ..auditoria import auditar
 from ..util import caminho_interno
-from .rbac import PERFIS, ROTULO_PERFIL, carregar_usuario, exige, home_de, login_obrigatorio, unidades_visiveis, pode_ver_unidade
+from .rbac import PERFIS, ROTULO_PERFIL, carregar_usuario, exige, home_de, login_obrigatorio, pode_ver_unidade, unidades_visiveis, versao_senha
 
 bp = Blueprint("auth", __name__)
 
@@ -31,17 +33,63 @@ def _injetar():
     }
 
 
+# Revisão (S14): sem limite de tentativas, força bruta no e-mail do superadmin; e o tempo de
+# resposta revelava se o e-mail existia (só calculava o hash quando existia).
+FALHAS_LIVRES = 5
+BLOQUEIO_MAX_MIN = 30
+_HASH_FALSO = generate_password_hash("senha-que-nao-existe-" + "x" * 16)
+
+
+def _ip():
+    if current_app.config.get("MODO") == "nuvem":
+        # atrás do proxy do Railway: o último endereço é o que o proxy viu (os anteriores o cliente inventa)
+        xff = [p.strip() for p in (request.headers.get("X-Forwarded-For") or "").split(",") if p.strip()]
+        if xff:
+            return xff[-1]
+    return request.remote_addr or "?"
+
+
+def _bloqueado(chaves):
+    r = db.query("SELECT max(bloqueado_ate) AS ate FROM login_falhas WHERE chave = ANY(%s) AND bloqueado_ate > now()", (chaves,), one=True)
+    return r["ate"] if r else None
+
+
+def _falhou(chaves):
+    for chave in chaves:
+        db.execute(
+            "INSERT INTO login_falhas (chave, falhas) VALUES (%s, 1) ON CONFLICT (chave) DO UPDATE SET "
+            "falhas = CASE WHEN login_falhas.atualizado_em < now() - interval '1 day' THEN 1 ELSE login_falhas.falhas + 1 END, atualizado_em = now()",
+            (chave,), outbox=False)
+        db.execute(
+            "UPDATE login_falhas SET bloqueado_ate = now() + make_interval(mins => LEAST(%s, power(2, falhas - %s)::int)) "
+            "WHERE chave = %s AND falhas >= %s", (BLOQUEIO_MAX_MIN, FALHAS_LIVRES, chave, FALHAS_LIVRES), outbox=False)
+
+
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         email = (request.form.get("email") or "").strip().lower()
         senha = request.form.get("senha") or ""
+        chaves = [f"email:{email}", f"ip:{_ip()}"]
+        ate = _bloqueado(chaves)
+        if ate:
+            minutos = max(1, int((ate - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
+            flash(f"Muitas tentativas erradas. Tente de novo em {minutos} min.", "danger")
+            return render_template("auth/login.html"), 429
         u = db.query("SELECT * FROM usuarios_admin WHERE lower(email) = %s AND ativo", (email,), one=True)
-        if u and check_password_hash(u["senha_hash"], senha):
+        ok = check_password_hash(u["senha_hash"] if u else _HASH_FALSO, senha) and u is not None
+        if not ok:
+            _falhou(chaves)
+            auditar("login_falhou", "usuarios_admin", email[:120], depois={"ip": _ip()}, usuario_id=u["id"] if u else None,
+                    unidade_id=u["unidade_id"] if u else None)
+        if ok:
+            db.execute("DELETE FROM login_falhas WHERE chave = %s", (chaves[0],), outbox=False)
             session.clear()
             session.permanent = True
             session["usuario_id"] = u["id"]
+            session["senha_v"] = versao_senha(u)
             db.execute("UPDATE usuarios_admin SET ultimo_login = now() WHERE id = %s", (u["id"],))
+            auditar("login", "usuarios_admin", u["id"], depois={"ip": _ip()}, usuario_id=u["id"], unidade_id=u["unidade_id"])
             # Usuário de uma unidade só já entra nela; os outros escolhem
             if u["unidade_id"]:
                 session["unidade_id"] = u["unidade_id"]
@@ -150,7 +198,11 @@ def trocar_senha():
         elif len(nova) < 8:
             flash("A nova senha precisa de 8 caracteres ou mais", "danger")
         else:
-            db.execute("UPDATE usuarios_admin SET senha_hash = %s WHERE id = %s", (generate_password_hash(nova), g.usuario["id"]))
+            novo_hash = generate_password_hash(nova)
+            db.execute("UPDATE usuarios_admin SET senha_hash = %s WHERE id = %s", (novo_hash, g.usuario["id"]))
+            # Revisão (S19): trocar a senha derruba as outras sessões (ex.: celular perdido);
+            # esta continua valendo
+            session["senha_v"] = versao_senha({"senha_hash": novo_hash})
             auditar("trocar_senha", "usuarios_admin", g.usuario["id"])
             flash("Senha alterada", "success")
             return redirect(url_for("painel.dashboard"))

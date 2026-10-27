@@ -51,7 +51,7 @@
   <tbody>
   {% for p in pessoas %}
     <tr>
-      <td>{% if p.tem_foto %}<img class="foto-mini" src="{{ url_for('pessoas.foto_jpg', pessoa_id=p.id) }}" alt="">{% endif %}</td>
+      <td>{% if p.tem_foto %}<img class="foto-mini" src="{{ url_for('pessoas.foto_jpg', pessoa_id=p.id, mini=1) }}" alt="">{% endif %}</td>
       <td><a href="{{ url_for('pessoas.detalhe', pessoa_id=p.id) }}">{{ p.nome }}</a></td>
       {% if not tipo or pendencia %}<td>{{ rotulo_tipo.get(p.tipo, p.tipo) }}</td>{% endif %}
       <td>{{ p.turma_nome or p.cargo or '' }}</td>

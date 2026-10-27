@@ -39,6 +39,10 @@ def rodada_catraca(adaptadores, contadores):
 
 
 def rodada_nuvem(contadores):
+    if _a_cada(contadores, "batimento", 30):
+        from app import alertas
+
+        alertas.batimento(os.environ.get("MODO", "unico"))
     enviados, falhas = notify.enviar_pendentes()
     if enviados or falhas:
         log.info("telegram: %d enviados, %d falhas", enviados, falhas)
@@ -148,10 +152,12 @@ def iniciar_agente(unidade_id):
 
 
 def vigia():
+    from app import alertas
     from app.espelho import failover
 
     for u, acao in failover.verificar():
         log.warning("vigia: failover %s em %s", acao, u["nome"])
+    alertas.verificar()
 
 
 def conectar(url, maxconn, espera_max=60):
@@ -174,6 +180,8 @@ def main():
     modo = os.environ.get("MODO", "unico")
     conectar(os.environ["DATABASE_URL"], 8)
     db.gucs = {"nexosix.outbox": "on"} if modo in ("nuvem", "local") else {}
+    # O6: o worker não começa antes do banco estar na versão do código (trava compartilhada com o site)
+    db.migrar(log=log.info)
     # Marca de escola nas escritas do worker (o site faz isso pela sessão). Sem ela a exclusão
     # LGPD das fotos saía da nuvem sem escola e o PC da escola nunca apagava a foto.
     db.gucs_fn = [lambda: {"nexosix.unidade": db.contexto.unidade_id} if getattr(db.contexto, "unidade_id", None) else {}]

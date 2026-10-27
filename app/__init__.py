@@ -72,6 +72,17 @@ def create_app(config_object=None):
         db.query("SELECT 1")
         return {"ok": True, "modo": modo}
 
+    @app.route("/health/worker")
+    def health_worker():
+        """Para um monitor externo (UptimeRobot etc.): 503 se o worker da nuvem parou — é ele
+        que manda os avisos aos pais e vigia a redundância (O2)."""
+        from . import alertas
+
+        nome = "nuvem" if modo == "nuvem" else modo
+        ok = alertas.worker_ok(nome)
+        visto = alertas.worker_visto(nome)
+        return {"ok": ok, "worker_visto_em": visto.isoformat() if visto else None}, (200 if ok else 503)
+
     @app.context_processor
     def _modo():
         return {"modo": modo, "nuvem_url": app.config.get("NUVEM_URL", "")}
@@ -79,4 +90,7 @@ def create_app(config_object=None):
     from .cli import registrar_comandos
 
     registrar_comandos(app)
+    from .seguranca import instalar as instalar_seguranca
+
+    instalar_seguranca(app)
     return app

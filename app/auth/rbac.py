@@ -47,21 +47,31 @@ def home_de(usuario):
     return url_for(endpoint, **args)
 
 
+def versao_senha(u):
+    """Pedaço do hash da senha guardado na sessão: mudou a senha, as sessões antigas caem."""
+    import hashlib
+
+    return hashlib.sha256((u.get("senha_hash") or "").encode()).hexdigest()[:16]
+
+
 def carregar_usuario():
     """Preenche g.usuario e g.unidade a partir da sessão. Retorna None se deslogado."""
     uid = session.get("usuario_id")
     # Cache por requisição, mas só se ainda é o mesmo login: com app_context compartilhado
     # (testes, CLI) o g sobrevive entre requisições e deixaria um logout "logado".
     cache = getattr(g, "usuario", None)
-    if cache is not None and cache["id"] == uid and session.get("unidade_id") == getattr(g, "unidade_id_cache", None):
+    if (cache is not None and cache["id"] == uid and session.get("unidade_id") == getattr(g, "unidade_id_cache", None)
+            and session.get("senha_v") == getattr(g, "senha_v_cache", None)):
         return cache
     g.unidade_id_cache = session.get("unidade_id")
+    g.senha_v_cache = session.get("senha_v")
     if not uid:
         g.usuario = None
         g.unidade = None
         return None
     u = db.query("SELECT * FROM usuarios_admin WHERE id = %s AND ativo", (uid,), one=True)
-    if not u:
+    if u and session.get("senha_v") != versao_senha(u):
+        u = None  # senha trocada (ou sessão de antes desta regra): entrar de novo
         session.clear()
         g.usuario = None
         g.unidade = None

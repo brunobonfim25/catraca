@@ -320,10 +320,24 @@ def foto_salvar(pessoa_id):
 @bp.get("/<int:pessoa_id>/foto.jpg")
 @exige("ver_presenca")
 def foto_jpg(pessoa_id):
+    import time
+
+    from flask import session
+
     _pessoa_da_unidade(pessoa_id)
     jpeg = service.obter_foto(pessoa_id)
     if not jpeg:
         abort(404)
+    # Revisão (S19): ver a foto (dado biométrico) não ficava registrado. Uma linha por pessoa
+    # por hora e por sessão — a miniatura da lista não conta (senão 300 linhas por página).
+    if request.args.get("mini") != "1":
+        vistas = session.get("fotos_vistas") or {}
+        agora = int(time.time())
+        if agora - int(vistas.get(str(pessoa_id), 0)) > 3600:
+            auditar("ver_foto", "pessoa", pessoa_id)
+            vistas = {k: v for k, v in vistas.items() if agora - int(v) <= 3600}
+            vistas[str(pessoa_id)] = agora
+            session["fotos_vistas"] = vistas
     return Response(jpeg, content_type="image/jpeg", headers={"Cache-Control": "private, max-age=60"})
 
 
