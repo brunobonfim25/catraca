@@ -194,6 +194,12 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   (ficha do responsável → Ativar Telegram → QR).
 - **PC do agente**: HP EliteDesk 705 G1 DM (A8, 8 GB, SSD 120, Win 10 Pro, RJ45) comprado
   para teste. Instalação pelo `instalar-agente.cmd` do painel (Unidades → Config).
+- **Reorganização do painel** (27/10, PDF em `docs/` da análise de usabilidade): fase 1 no ar —
+  menu lateral por papel, tela inicial por papel (`HOME_POR_PERFIL`), perfil `secretaria`,
+  Agora ≠ Recepção, Alunos/Responsáveis/Funcionários/Pendências, vocabulário único
+  (escola / cliente / catraca / servidor da escola). Faltam: fase 2 (cadastro guiado em
+  passos, coluna "pronto para a catraca?"), fase 3 (checklist de implantação, Configuração
+  passo a passo com Avançado), fase 4 (importar planilha, fila de fotos).
 - **Pendentes**: bot do Telegram; PC chegar e aparecer como "agente visto"; domínio +
   Cloudflare (redundância por DNS); catraca chegar (roteiro em `integrations/controlid/README.md`);
   módulo de mensalidade/cobrança (decidido deixar para depois do piloto).
