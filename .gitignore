@@ -7,3 +7,6 @@ __pycache__/
 /fotos_locais/
 docs/prints-fase1/
 docs/prints-fase2/
+
+# contratos têm preços e dados das partes: nunca no repositório (ele é público)
+docs/Contrato*
