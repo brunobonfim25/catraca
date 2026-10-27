@@ -38,6 +38,11 @@ def registrar_comandos(app):
                 (email.lower(), generate_password_hash(senha)),
             )
             click.echo(f"superadmin criado: {email}")
+        if app.config.get("MODO") != "local":
+            from .espelho.service import garantir_monitor_token
+
+            for u in db.query("SELECT id FROM unidades WHERE NOT config ? 'monitor_token'"):
+                garantir_monitor_token(u["id"])
         # Webhook do Telegram a cada deploy: o bot passou a usar botões (autorização dos pais),
         # que chegam como callback_query — sem re-registrar, o Telegram nem manda o clique.
         base = app.config.get("BASE_URL", "")
@@ -63,8 +68,33 @@ def registrar_comandos(app):
         base = unidade_id * 10_000_000
         for s in db.query("SELECT sequencename, last_value FROM pg_sequences WHERE schemaname = 'public'"):
             db.execute("SELECT setval(%s, GREATEST(COALESCE(%s, 0), %s), true)", (s["sequencename"], s["last_value"], base))
-        db.execute("UPDATE espelho_estado SET cursor_nuvem = 0 WHERE id = 1")
+        # Revisão (E10): o instalador roda isto a cada atualização; zerar o cursor sempre
+        # obrigava a baixar tudo de novo e, até lá, o agente operava com o cadastro velho.
+        # Só zera se a carga inicial ainda não foi feita (ou se a escola mudou).
+        est = db.query("SELECT * FROM espelho_estado WHERE id = 1", one=True)
+        uni_local = db.query("SELECT id FROM unidades WHERE id = %s", (unidade_id,), one=True)
+        if est["carga_em"] is None or uni_local is None:
+            db.execute("UPDATE espelho_estado SET cursor_nuvem = 0, cursor_xid = '0', carga_em = NULL WHERE id = 1", outbox=False)
+        # Identidade deste PC: a nuvem recusa um segundo agente ativo na mesma escola
+        db.execute("UPDATE espelho_estado SET agente_id = COALESCE(agente_id, gen_random_uuid()::text) WHERE id = 1", outbox=False)
         click.echo(f"agente da unidade {unidade_id} pronto; ids locais a partir de {base + 1}. Inicie o worker pra baixar o cadastro.")
+
+    @app.cli.command("espelho-enviar")
+    def espelho_enviar():
+        """Agente: sobe pra nuvem o que ainda não subiu (o instalador roda antes de parar os serviços)."""
+        import os
+
+        from .espelho import service
+
+        nuvem, token = os.environ.get("NUVEM_URL", "").rstrip("/"), os.environ.get("ESPELHO_TOKEN", "")
+        if not (nuvem and token):
+            click.echo("sem NUVEM_URL/ESPELHO_TOKEN: nada a enviar")
+            return
+        try:
+            n = service.empurrar(nuvem, token, max_lotes=200)
+            click.echo(f"{n} linha(s) enviadas; pendentes agora: {service.pendentes()['n']}")
+        except service.EspelhoErro as e:
+            click.echo(f"não consegui enviar ({e}); fica pendente e sobe quando o agente voltar")
 
     @app.cli.command("token-espelho")
     @click.option("--unidade-id", type=int, required=True)

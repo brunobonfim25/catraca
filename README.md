@@ -36,10 +36,15 @@ na catraca: [`integrations/controlid/README.md`](integrations/controlid/README.m
   catraca fica em contingência: libera entrada e **nega a saída de quem precisa de
   responsável** (regra só no portal de entrada). Sem Cloudflare configurada, só a
   contingência vale (eventos ficam na catraca e são coletados quando o agente voltar).
-- Sincronização por **outbox**: toda escrita vira uma linha em `espelho_outbox` (trigger); a
-  nuvem marca de qual unidade é cada linha; o agente puxa as dele (`/api/espelho/<token>/reverso`)
-  e empurra as suas (`POST /api/espelho/<token>`). Aplicar nunca gera eco. Ids não colidem: o
-  agente usa a faixa `unidade_id × 10 milhões`.
+- Sincronização por **outbox**: toda escrita vira uma linha em `espelho_outbox` (trigger),
+  marcada com a escola **da própria linha** (pessoa → unidade, catraca → unidade…; empresa e
+  usuário da rede vão pra todas as escolas). O agente puxa as dele (`GET /api/espelho/reverso`,
+  cursor `(xid, id)` — só transações já terminadas, nada é pulado; cada item leva o estado
+  atual da linha) e empurra as suas (`POST /api/espelho/receber`). Token sempre no cabeçalho
+  `X-Espelho-Token` (nunca na URL) + `X-Agente-Id` (um agente ativo por escola). A nuvem só
+  aceita do agente o que é dele (eventos, presença, esperas, status — `REGRAS_DO_AGENTE`);
+  item que não aplica vai pra `espelho_quarentena` e é tentado de novo. Aplicar nunca gera
+  eco. Ids não colidem: o agente usa a faixa `unidade_id × 10 milhões`.
 - Tudo que o painel pede à catraca (testar, Monitor, modo, liberar, hora) vira **comando na
   fila**, que desce e é executado pelo agente em segundos.
 
@@ -59,17 +64,23 @@ Para cada escola: painel → Unidades → criar → Config da unidade → **Gera
 
 **Redundância por DNS** (opcional, recomendada): domínio na Cloudflare; na nuvem
 `CLOUDFLARE_API_TOKEN` (Zone.DNS:Edit), `CLOUDFLARE_ZONE_ID`, `FAILOVER_NUVEM_ALVO` (host do
-Railway); na Cloudflare, "Always Use HTTPS" **desligado** para esse nome e SSL "Full" (a catraca
-fala HTTP na porta 80; a Cloudflare fala HTTPS com o Railway); na configuração da unidade,
-"Nome DNS da catraca" = `catraca-recreio.nexosix.com.br`. O agente escuta na porta 80 e
-`BASE_URL=http://catraca-recreio.nexosix.com.br`. Na catraca, DNS primário `1.1.1.1` (alguns
-roteadores bloqueiam respostas DNS com IP privado). **[HW]** validar na catraca: nome em
-`monitor.hostname`/`devices.ip`, HTTP pela internet e cache de DNS.
+Railway) e `FAILOVER_DOMINIO` (ex.: `nexosix.com.br`); na Cloudflare, "Always Use HTTPS"
+**desligado** para esses nomes e SSL "Full" (a catraca fala HTTP na porta 80; a Cloudflare fala
+HTTPS com o Railway). O nome da catraca de cada escola é calculado (`catraca-u<id>.<domínio>`;
+só o superadmin troca, e só dentro do domínio). O vigia aponta o nome pro IP do PC da escola
+(acompanha quando o roteador troca o IP), passa pra nuvem se o agente ficar mudo **ou** o
+site dele cair por `FAILOVER_APOS_SEG`, e só devolve depois de `FAILOVER_VOLTA_SEG` (120 s)
+estável. IP que não é de rede local é ignorado. **No roteador da escola**, crie uma entrada de
+DNS local com o nome → IP do PC: sem ela, se a internet cair, a catraca não resolve o nome e
+fica sem servidor. **[HW]** validar na catraca: nome em `monitor.hostname`/`devices.ip`, HTTP
+pela internet e cache de DNS.
 
 ## Agente na escola (Windows) — instalador de dois cliques
 
-1. No painel da nuvem: Unidades → Config da unidade → **Gerar token do agente** → **Baixar
-   instalar-agente.cmd**. O arquivo já carrega o token e o id da unidade.
+1. No painel da nuvem (logado, perfil que configura a escola): Unidades → Config da unidade →
+   **Gerar token do agente** → **Baixar instalar-agente.cmd**. O arquivo já carrega o token e o
+   id da unidade (é uma credencial: apague depois de instalar). O código do agente é baixado
+   da própria nuvem (`/api/espelho/pacote.zip`, com o token) — não depende do GitHub.
 2. No PC da escola (IP fixo; Windows 10/11; pode ser por acesso remoto): dois cliques no `.cmd`.
    Ele pede administrador e instala tudo sozinho: Python 3.12, PostgreSQL 16, o agente
    (`C:\nexosix\app`), banco, `.env`, serviços **NexosixAgente** e **NexosixWorker** (NSSM, ou
@@ -81,7 +92,9 @@ roteadores bloqueiam respostas DNS com IP privado). **[HW]** validar na catraca:
 
 Alternativa manual: `deploy/windows/instalar.ps1 -UnidadeId 1` com Python/PostgreSQL/NSSM já
 instalados. O instalador servido pela nuvem é `deploy/windows/instalador.ps1` com os
-placeholders preenchidos (`/instalador/<token>.ps1` e `.cmd`).
+placeholders preenchidos, embutido no `.cmd` (`/unidades/<id>/instalador.cmd`, só logado).
+`C:\nexosix` fica acessível só a SYSTEM e Administradores (o `.env` tem os tokens). Atualizar
+roda `flask espelho-enviar` antes de parar os serviços (nada fica só no PC).
 
 Linux (mini PC Ubuntu): `deploy/linux/` (systemd web + worker, `backup.sh`).
 
@@ -124,7 +137,9 @@ agente baixa → catraca simulada → evento sobe → liberação manual desce e
 
 1. Na rede da escola: `python -m scripts.testar_catraca --ip <IP do iDFace primário> --senha <senha>`.
 2. Nuvem → Catracas → cadastrar com o IP → **Testar conexão** (o agente preenche serial/firmware/device_id).
-3. **Configurar Monitor** → a catraca passa a chamar `http://<IP do agente>:8000/api/notifications/<MONITOR_TOKEN>/…`.
+3. **Configurar Monitor** → a catraca passa a chamar `http://<nome DNS da escola>/api/notifications/<token da escola>/…`
+   (sem domínio configurado: o `BASE_URL` do agente). O token é por escola (`unidades.config.monitor_token`);
+   na nuvem o `MONITOR_TOKEN` global não vale.
    "Último contato" deve atualizar a cada 30 s.
 4. Pessoa de teste com foto → Catracas → detalhe: foto `sincronizado`.
 5. Passar em Standalone → evento com o sentido certo (senão, ajustar o mapeamento de leitores).

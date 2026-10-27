@@ -5,7 +5,7 @@ Gerado pelo painel da nuvem com os dados da unidade já dentro (placeholders __X
 O que faz (idempotente: rodar de novo = atualizar o agente):
   1. Python 3.12 (instalação silenciosa, se não houver)
   2. PostgreSQL 16 (instalação silenciosa, se não houver) + banco "nexosix"
-  3. Baixa o código do agente (GitHub) para C:\nexosix\app e instala as dependências
+  3. Baixa o código do agente (da nuvem, com o token) para C:\nexosix\app e instala as dependências
   4. Escreve C:\nexosix\app\.env (UNIDADE_ID, NUVEM_URL, ESPELHO_TOKEN, BASE_URL…)
   5. Migra o banco e reserva a faixa de ids da unidade
   6. Registra os serviços NexosixAgente e NexosixWorker (NSSM; sem NSSM, tarefas agendadas)
@@ -20,7 +20,6 @@ $NUVEM_URL   = "__NUVEM_URL__"
 $TOKEN       = "__TOKEN__"
 $UNIDADE_ID  = "__UNIDADE_ID__"
 $UNIDADE     = "__UNIDADE_NOME__"
-$REPO_ZIP    = "https://github.com/brunobonfim25/catraca/archive/refs/heads/main.zip"
 $PY_URL      = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe"
 $PG_URL      = "https://get.enterprisedb.com/postgresql/postgresql-16.9-1-windows-x64.exe"
 $NSSM_URL    = "https://nssm.cc/release/nssm-2.24.zip"
@@ -35,6 +34,9 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Write-Host "Abra o PowerShell como ADMINISTRADOR e rode de novo." -ForegroundColor Red; exit 1
 }
 New-Item -ItemType Directory -Force -Path $RAIZ, "$RAIZ\logs", "$RAIZ\backups", "$RAIZ\tmp" | Out-Null
+# .env (tokens, senha do banco), pg-senha.txt e backups ficam aqui: só SYSTEM e Administradores leem.
+# Antes qualquer usuário do PC da recepção abria o .env e virava o "agente" da escola.
+icacls $RAIZ /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" | Out-Null
 Write-Host "Agente Nexosix — unidade $UNIDADE_ID ($UNIDADE) — nuvem $NUVEM_URL" -ForegroundColor Green
 
 # ---------------------------------------------------------------- 1. Python
@@ -70,11 +72,19 @@ Write-Host "   banco nexosix ok"
 
 # ---------------------------------------------------------------- 3. Código do agente
 Passo "Código do agente"
-Invoke-WebRequest $REPO_ZIP -OutFile "$RAIZ\tmp\app.zip"
+# Código vem da nuvem (token no cabeçalho), não do GitHub: o repositório pode ser privado
+Invoke-WebRequest "$NUVEM_URL/api/espelho/pacote.zip" -Headers @{ "X-Espelho-Token" = $TOKEN } -UseBasicParsing -OutFile "$RAIZ\tmp\app.zip"
 Remove-Item "$RAIZ\tmp\app" -Recurse -Force -ErrorAction SilentlyContinue
 Expand-Archive "$RAIZ\tmp\app.zip" "$RAIZ\tmp\app"
 $origem = Get-ChildItem "$RAIZ\tmp\app" | Select-Object -First 1
 if (Test-Path "$APP\.env") { Copy-Item "$APP\.env" "$RAIZ\tmp\env.bak" }
+# Atualização: antes de parar, sobe pra nuvem o que ainda não subiu (eventos da manhã etc.).
+# Revisão (E10): parar no meio deixava eventos só no PC; se a reinstalação desse errado, sumiam.
+if (Test-Path "$APP\.venv\Scripts\python.exe") {
+    Push-Location $APP
+    & "$APP\.venv\Scripts\python.exe" -m flask --app wsgi espelho-enviar 2>&1 | Out-Host
+    Pop-Location
+}
 foreach ($nome in "NexosixAgente", "NexosixWorker") { Stop-Service $nome -ErrorAction SilentlyContinue; schtasks /end /tn $nome 2>$null | Out-Null }
 New-Item -ItemType Directory -Force -Path $APP | Out-Null
 Get-ChildItem $APP -Exclude ".env", ".venv" | Remove-Item -Recurse -Force
@@ -100,7 +110,6 @@ SECRET_KEY=$(Aleatorio 48)
 MONITOR_TOKEN=$(Aleatorio 32)
 BASE_URL=http://$ip
 PORT=$PORTA
-AGENTE_IP_LAN=$ip
 TZ_PADRAO=America/Sao_Paulo
 WORKER_INTERVALO_SEG=3
 "@ | Set-Content "$APP\.env" -Encoding ASCII
@@ -109,6 +118,8 @@ WORKER_INTERVALO_SEG=3
     # token/nuvem podem ter mudado no painel; o resto (segredos locais) fica
     $env_ = Get-Content "$APP\.env"
     $env_ = $env_ -replace "^ESPELHO_TOKEN=.*", "ESPELHO_TOKEN=$TOKEN" -replace "^NUVEM_URL=.*", "NUVEM_URL=$NUVEM_URL" -replace "^UNIDADE_ID=.*", "UNIDADE_ID=$UNIDADE_ID"
+    # IP fixado na instalação ficava velho quando o roteador trocava o IP; agora o agente descobre a cada ping
+    $env_ = $env_ | Where-Object { $_ -notmatch "^AGENTE_IP_LAN=" }
     Set-Content "$APP\.env" $env_ -Encoding ASCII
     Write-Host "   .env mantido (token/nuvem atualizados)"
 }
@@ -173,5 +184,7 @@ Write-Host "`nPRONTO. Agente da unidade $UNIDADE instalado." -ForegroundColor Gr
 Write-Host "  Status local : http://$ip`:$PORTA/agente"
 Write-Host "  Painel       : $NUVEM_URL  (em ~1 min a unidade deve aparecer como 'agente visto')"
 Write-Host "  Logs         : $RAIZ\logs"
-Write-Host "  A catraca deve apontar para http://$ip (Monitor e modo Pro) — isso é feito pelo painel em Catracas > Configurar Monitor."
+Write-Host "  A catraca é configurada pelo painel (Catracas > Configurar Monitor) com o NOME da escola, não com o IP."
+Write-Host "  IMPORTANTE: no roteador da escola, crie uma entrada de DNS local com esse nome apontando para $ip." -ForegroundColor Yellow
+Write-Host "  Sem ela, se a internet cair a catraca não acha este PC (o nome só existe na internet)." -ForegroundColor Yellow
 Start-Process "http://localhost:$PORTA/agente"

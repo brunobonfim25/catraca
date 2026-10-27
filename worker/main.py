@@ -62,18 +62,32 @@ def rodada_nuvem(contadores):
         esp.limpar_outbox_da_nuvem()
 
 
+def _etapa(nome, fn, *args):
+    """Cada etapa por si. Revisão (E1): uma exceção no puxar (nuvem fora, item quebrado)
+    pulava a fila da catraca e o envio de eventos da rodada — com a internet ruim, a catraca
+    ficava sem fotos novas e a nuvem sem eventos até a internet voltar."""
+    try:
+        return fn(*args)
+    except Exception:  # noqa: BLE001
+        log.exception("etapa %s falhou", nome)
+        return FALHOU
+
+
+FALHOU = object()
+
+
 def rodada_agente(adaptadores, contadores):
-    if not espelho.garantir_carga_inicial():
-        return
-    n = espelho.puxar()
-    if n:
-        log.info("nuvem → agente: %d linhas", n)
-    rodada_catraca(adaptadores, contadores)
-    n = espelho.empurrar()
-    if n:
+    carregado = _etapa("carga inicial", espelho.garantir_carga_inicial)
+    if carregado is True:
+        n = _etapa("puxar", espelho.puxar)
+        if n and n is not FALHOU:
+            log.info("nuvem → agente: %d linhas", n)
+    # A catraca é atendida mesmo sem a carga inicial: o que já está na fila local é executado
+    if _etapa("catraca", rodada_catraca, adaptadores, contadores) is FALHOU:
+        adaptadores.clear()
+    n = _etapa("empurrar", espelho.empurrar)
+    if n and n is not FALHOU:
         log.info("agente → nuvem: %d linhas", n)
-    if _a_cada(contadores, "ping", 30):
-        espelho.ping()
 
 
 def main():
@@ -88,6 +102,8 @@ def main():
     intervalo = int(os.environ.get("WORKER_INTERVALO_SEG", "3" if modo == "local" else "5"))
     adaptadores, contadores = {}, {}
     log.info("worker iniciado em MODO=%s (intervalo %ss)", modo, intervalo)
+    if modo == "local":
+        espelho.iniciar_ping()
     while True:
         try:
             if modo == "nuvem":

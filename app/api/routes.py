@@ -1,8 +1,8 @@
 """Endpoints que a catraca chama (Monitor e modo Pro) + JSON do painel (polling).
 
-Autenticação da catraca: token na URL (MONITOR_TOKEN). A Control iD não assina as
-notificações; o token é segredo compartilhado configurado em monitor.path e na URL do
-servidor online. Tudo que chega aqui é dado externo: validado e logado, nunca confiado.
+Autenticação da catraca: token da escola na URL (unidades.config.monitor_token). A Control iD
+não assina as notificações; o token é segredo compartilhado configurado em monitor.path e na
+URL do servidor online. Tudo que chega aqui é dado externo: validado e logado, nunca confiado.
 """
 import hmac
 import logging
@@ -21,9 +21,31 @@ log = logging.getLogger(__name__)
 
 
 def _checar_token(token):
+    """Token da URL → escola. Revisão (S7): era um token só pra todas as escolas; quem tinha o
+    .env de uma escola mandava "evento da catraca" de qualquer outra para a nuvem. Agora cada
+    escola tem o seu (unidades.config.monitor_token) e a catraca precisa ser daquela escola.
+    O MONITOR_TOKEN do .env só vale fora da nuvem (escola única ou o próprio agente)."""
+    from ..espelho.service import unidade_por_monitor_token
+
+    token = token or ""
+    un = unidade_por_monitor_token(token)
+    if un and hmac.compare_digest((un.get("config") or {}).get("monitor_token", ""), token):
+        g.unidade_token_id = un["id"]
+        return
     esperado = current_app.config.get("MONITOR_TOKEN") or ""
-    if not esperado or not hmac.compare_digest(esperado, token or ""):
+    if current_app.config.get("MODO") != "nuvem" and esperado and hmac.compare_digest(esperado, token):
+        uid = current_app.config.get("UNIDADE_ID") if current_app.config.get("MODO") == "local" else None
+        g.unidade_token_id = int(uid) if uid else None
+        return
+    abort(403)
+
+
+def _da_escola_do_token(d):
+    esperado = getattr(g, "unidade_token_id", None)
+    if d and esperado is not None and d["unidade_id"] != esperado:
+        log.warning("catraca %s (escola %s) chamou com o token da escola %s", d["id"], d["unidade_id"], esperado)
         abort(403)
+    return d
 
 
 def _dispositivo_do_payload(device_id):
@@ -33,6 +55,7 @@ def _dispositivo_do_payload(device_id):
     if not d:
         log.warning("notificação de device_id desconhecido: %s", device_id)
         abort(404, "dispositivo não cadastrado")
+    _da_escola_do_token(d)
     g.unidade_api_id = d["unidade_id"]
     return d
 
@@ -91,7 +114,7 @@ def online_device_is_alive(token):
     # [DOC] em contingência a catraca manda isso a cada minuto; HTTP OK = volta ao modo online
     _checar_token(token)
     payload = request.get_json(silent=True) or {}
-    d = dispositivos.por_device_id(payload.get("device_id")) if payload.get("device_id") else None
+    d = _da_escola_do_token(dispositivos.por_device_id(payload.get("device_id")) if payload.get("device_id") else None)
     if d:
         g.unidade_api_id = d["unidade_id"]
         dispositivos.atualizar_contato(d["id"], "online")
@@ -102,8 +125,9 @@ def online_device_is_alive(token):
 def online_rex(token):
     _checar_token(token)
     payload = request.get_json(silent=True) or {}
-    d = dispositivos.por_device_id(payload.get("device_id")) if payload.get("device_id") else None
+    d = _da_escola_do_token(dispositivos.por_device_id(payload.get("device_id")) if payload.get("device_id") else None)
     if d:
+        g.unidade_api_id = d["unidade_id"]
         eventos.registrar(d["unidade_id"], tipos.BOTOEIRA, eventos.agora_utc(), dispositivo_id=d["id"], detalhes=payload)
     return ""
 

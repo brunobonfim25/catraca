@@ -72,11 +72,46 @@ def _agora():
     return datetime.now(timezone.utc).isoformat()
 
 
+def dominio():
+    return (os.environ.get("FAILOVER_DOMINIO") or "").strip().lower().strip(".")
+
+
+def nome_valido(nome):
+    """Só nomes dentro do domínio da Nexosix. Revisão (S6): o nome era um campo livre na
+    configuração da escola e o vigia, com o token da Cloudflare, apontava QUALQUER nome da zona
+    — um admin de escola podia sequestrar o site principal escrevendo "www" ali."""
+    d = dominio()
+    nome = (nome or "").strip().lower().strip(".")
+    return bool(d and nome.endswith("." + d) and all(c.isalnum() or c in "-." for c in nome))
+
+
+def nome_padrao(unidade_id):
+    d = dominio()
+    return f"catraca-u{int(unidade_id)}.{d}" if d else None
+
+
+def nome_da_unidade(unidade, gravar=True):
+    """Nome DNS que a catraca desta escola usa. Calculado (catraca-u<id>.<domínio>); o
+    superadmin pode trocar, desde que dentro do domínio. Gravado em unidades.config pra descer
+    pro agente, que configura a catraca com ele."""
+    cfg = unidade.get("config") or {}
+    nome = cfg.get("dns_nome") if nome_valido(cfg.get("dns_nome")) else nome_padrao(unidade["id"])
+    if nome and gravar and cfg.get("dns_nome") != nome:
+        db.execute("UPDATE unidades SET config = config || %s WHERE id = %s", (Json({"dns_nome": nome}), unidade["id"]))
+        unidade["config"] = {**cfg, "dns_nome": nome}
+    return nome
+
+
+def _marcar_failover(unidade, campos):
+    atual = {**(((unidade.get("config") or {}).get("failover")) or {}), **campos}
+    db.execute("UPDATE unidades SET config = config || %s WHERE id = %s", (Json({"failover": atual}), unidade["id"]), outbox=False)
+    unidade["config"] = {**(unidade.get("config") or {}), "failover": atual}
+
+
 def ativar(unidade, dns=None):
     """Agente mudo → nome da catraca passa a apontar pra nuvem."""
-    cfg = unidade.get("config") or {}
     alvo = os.environ.get("FAILOVER_NUVEM_ALVO", "")
-    nome = cfg.get("dns_nome")
+    nome = nome_da_unidade(unidade)
     if not nome or not alvo:
         return False
     dns = dns or provedor()
@@ -87,7 +122,7 @@ def ativar(unidade, dns=None):
         return False
     if not ok:
         return False
-    db.execute("UPDATE unidades SET config = config || %s WHERE id = %s", (Json({"failover": {"ativo": True, "desde": _agora()}}), unidade["id"]), outbox=False)
+    _marcar_failover(unidade, {"ativo": True, "desde": _agora(), "saudavel_desde": None, "ip_apontado": None})
     db.contexto.unidade_id = unidade["id"]
     try:
         eventos.registrar(unidade["id"], tipos.FAILOVER_NUVEM, eventos.agora_utc(), origem="sistema", detalhes={"dns": nome, "alvo": alvo})
@@ -97,11 +132,15 @@ def ativar(unidade, dns=None):
     return True
 
 
+def _ip_lan(unidade):
+    ip = ((unidade.get("config") or {}).get("agente") or {}).get("ip_lan")
+    return ip if ip and espelho.ip_privado(ip) else None
+
+
 def encerrar(unidade, dns=None):
     """Agente voltou → nome volta pro IP dele na LAN."""
-    cfg = unidade.get("config") or {}
-    nome = cfg.get("dns_nome")
-    ip_lan = (cfg.get("agente") or {}).get("ip_lan")
+    nome = nome_da_unidade(unidade)
+    ip_lan = _ip_lan(unidade)
     if not nome or not ip_lan:
         return False
     dns = dns or provedor()
@@ -112,7 +151,7 @@ def encerrar(unidade, dns=None):
         return False
     if not ok:
         return False
-    db.execute("UPDATE unidades SET config = config || %s WHERE id = %s", (Json({"failover": {"ativo": False, "desde": None, "encerrado_em": _agora()}}), unidade["id"]), outbox=False)
+    _marcar_failover(unidade, {"ativo": False, "desde": None, "saudavel_desde": None, "encerrado_em": _agora(), "ip_apontado": ip_lan})
     db.contexto.unidade_id = unidade["id"]
     try:
         eventos.registrar(unidade["id"], tipos.FAILOVER_FIM, eventos.agora_utc(), origem="sistema", detalhes={"dns": nome, "alvo": ip_lan})
@@ -126,16 +165,50 @@ def em_failover(unidade):
     return bool(((unidade.get("config") or {}).get("failover") or {}).get("ativo"))
 
 
-def verificar(dns=None, apos_seg=None):
-    """Roda no worker da nuvem. Devolve lista de (unidade, 'ativado'|'encerrado')."""
+def _segundos_desde(iso):
+    if not iso:
+        return 0
+    return (datetime.now(timezone.utc) - datetime.fromisoformat(iso)).total_seconds()
+
+
+def verificar(dns=None, apos_seg=None, volta_seg=None):
+    """Roda no worker da nuvem. Devolve lista de (unidade, 'ativado'|'encerrado'|'ip').
+
+    Revisão (E6/E12/E16):
+      - o agente que dá sinal mas cujo site (o que a catraca chama) caiu também conta como fora;
+      - voltar pro agente só depois de `volta_seg` saudável seguido — um PC que liga e desliga
+        fazia o DNS pular a cada 30 s e a catraca ficava sem servidor no meio da troca;
+      - em operação normal o registro acompanha o IP atual do PC (o roteador troca o IP)."""
     apos_seg = apos_seg or int(os.environ.get("FAILOVER_APOS_SEG", "120"))
+    volta_seg = int(os.environ.get("FAILOVER_VOLTA_SEG", "120")) if volta_seg is None else volta_seg
     mudancas = []
-    for u in db.query("SELECT * FROM unidades WHERE ativo AND config ? 'dns_nome'"):
-        mudo = espelho.agente_silencioso(u, apos_seg)
-        if mudo and not em_failover(u):
-            if ativar(u, dns):
+    for u in db.query("SELECT * FROM unidades WHERE ativo AND config ? 'espelho_token'"):
+        nome = nome_da_unidade(u)
+        if not nome:
+            continue
+        agente = (u.get("config") or {}).get("agente") or {}
+        web_fora = agente.get("web_ok") is False and _segundos_desde(agente.get("web_falha_desde")) > apos_seg
+        doente = espelho.agente_silencioso(u, apos_seg) or web_fora
+        fo = (u.get("config") or {}).get("failover") or {}
+        if doente:
+            if fo.get("saudavel_desde"):
+                _marcar_failover(u, {"saudavel_desde": None})
+            if not em_failover(u) and ativar(u, dns):
                 mudancas.append((u, "ativado"))
-        elif not mudo and em_failover(u):
-            if encerrar(u, dns):
+            continue
+        if em_failover(u):
+            if not fo.get("saudavel_desde"):
+                _marcar_failover(u, {"saudavel_desde": _agora()})
+            if _segundos_desde(u["config"]["failover"]["saudavel_desde"]) >= volta_seg and encerrar(u, dns):
                 mudancas.append((u, "encerrado"))
+            continue
+        ip = _ip_lan(u)
+        if ip and fo.get("ip_apontado") != ip:
+            try:
+                if (dns or provedor()).apontar(nome, ip, "A"):
+                    _marcar_failover(u, {"ip_apontado": ip})
+                    log.info("DNS da catraca de %s agora aponta para %s", u["nome"], ip)
+                    mudancas.append((u, "ip"))
+            except Exception as e:  # noqa: BLE001
+                log.error("DNS %s → %s falhou: %s", nome, ip, e)
     return mudancas

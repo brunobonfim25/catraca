@@ -234,6 +234,9 @@ def unidade_nova():
         "INSERT INTO unidades (empresa_id, nome, endereco, fuso) VALUES (%s,%s,%s,%s) RETURNING id",
         (empresa_id, f["nome"].strip(), f.get("endereco"), fusos.validar(f.get("fuso"))), returning=True,
     )
+    from ..espelho.service import garantir_monitor_token
+
+    garantir_monitor_token(row["id"])
     auditar("criar", "unidade", row["id"], depois={"nome": f["nome"]}, unidade_id=row["id"])
     return redirect(url_for("auth.trocar_unidade", unidade_id=row["id"]))
 
@@ -249,19 +252,30 @@ def unidade_config(unidade_id):
         cfg = {
             "espera_responsavel_min": int(f.get("espera_responsavel_min") or 15),
             "responsavel_resposta": f.get("responsavel_resposta") or "aguardar",
-            "dns_nome": (f.get("dns_nome") or "").strip().lower() or None,
         }
+        # Nome DNS da catraca: só o superadmin troca, e só dentro do domínio (o vigia aponta esse
+        # nome na Cloudflare; antes qualquer admin de escola escrevia o nome que quisesse).
+        if g.usuario["perfil"] == "superadmin" and "dns_nome" in f:
+            from ..espelho import failover
+
+            nome = (f.get("dns_nome") or "").strip().lower()
+            if nome and not failover.nome_valido(nome):
+                flash(f"Nome DNS precisa terminar em .{failover.dominio() or '(FAILOVER_DOMINIO não configurado)'}", "danger")
+                return redirect(url_for("painel.unidade_config", unidade_id=unidade_id))
+            cfg["dns_nome"] = nome or failover.nome_padrao(unidade_id)
         db.execute("UPDATE unidades SET nome = %s, endereco = %s, fuso = %s, config = config || %s WHERE id = %s",
                    (f["nome"].strip(), f.get("endereco"), fusos.validar(f.get("fuso")), json.dumps(cfg), unidade_id))
         auditar("config", "unidade", unidade_id, antes=un["config"], depois=cfg)
         flash("Unidade atualizada", "success")
         return redirect(url_for("painel.unidade_config", unidade_id=unidade_id))
+    from ..espelho import service as espelho_service
     from ..notificacoes import convites, email, telegram
 
     tem_logo = db.query("SELECT 1 FROM unidade_logos WHERE unidade_id = %s", (unidade_id,), one=True) is not None
     return render_template("painel/unidade_config.html", un=un, fusos=fusos.FUSOS_BRASIL, link_escola=telegram.link_escola(un["id"]),
                            convite_texto=convites.texto_da_escola(un), nome_convite=convites.nome_escola(un), tem_logo=tem_logo,
-                           email_ok=email.configurado())
+                           email_ok=email.configurado(), schema_nuvem=espelho_service.versao_schema(),
+                           quarentena=db.query("SELECT count(*) AS n FROM espelho_quarentena WHERE unidade_id = %s", (unidade_id,), one=True)["n"])
 
 
 LOGO_MAX_BYTES = 300 * 1024

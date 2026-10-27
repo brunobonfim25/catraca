@@ -7,8 +7,10 @@
 <div class="row g-3">
   <div class="col-md-4"><div class="card"><div class="card-body">
     <h6>Sincronização com a nuvem</h6>
-    <div>cursor da nuvem: <b>{{ estado.cursor_nuvem if estado else '—' }}</b> {% if estado and estado.cursor_nuvem == 0 %}<span class="badge bg-warning">carga inicial pendente</span>{% endif %}</div>
+    <div>cadastro: {% if estado and estado.carga_em %}<b>baixado</b> <small class="text-muted">em {{ estado.carga_em.strftime('%d/%m %H:%M') }} UTC</small>{% else %}<span class="badge bg-warning">carga inicial pendente</span>{% endif %}</div>
     <div>a enviar: <b>{{ pendentes.n }}</b> {% if pendentes.desde %}<small class="text-muted">(desde {{ pendentes.desde.strftime('%d/%m %H:%M') }} UTC)</small>{% endif %}</div>
+    {% if estado and estado.desvio_relogio_seg is not none and (estado.desvio_relogio_seg > 60 or estado.desvio_relogio_seg < -60) %}<div class="text-danger"><b>Relógio deste PC errado</b> ({{ estado.desvio_relogio_seg }} s): acerte a hora do Windows.</div>{% endif %}
+    {% if quarentena %}<div class="text-danger">{{ quarentena }} item(ns) da nuvem não aplicados (quarentena) — avise o suporte.</div>{% endif %}
   </div></div></div>
   <div class="col-md-4"><div class="card"><div class="card-body">
     <h6>Catracas</h6>

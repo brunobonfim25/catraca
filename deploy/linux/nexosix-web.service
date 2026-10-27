@@ -1,6 +1,8 @@
 # /etc/systemd/system/nexosix-web.service — agente da escola em Linux (mini PC Ubuntu/Debian)
 # sudo useradd -r -m nexosix; clone em /opt/nexosix; python -m venv /opt/nexosix/.venv; pip install -r requirements.txt
-# .env com MODO=local, UNIDADE_ID, NUVEM_URL, ESPELHO_TOKEN, BASE_URL=http://<ip fixo>:8000
+# .env com MODO=local, UNIDADE_ID, NUVEM_URL, ESPELHO_TOKEN, BASE_URL=http://<ip fixo>
+# Porta 80: a catraca chama o mesmo nome (e porta) que a Cloudflare atende no failover.
+# chmod 600 /opt/nexosix/.env (tokens e senha do banco)
 # flask --app wsgi configurar-local; sudo systemctl enable --now nexosix-web nexosix-worker
 [Unit]
 Description=Nexosix Acesso - agente (API da catraca)
@@ -11,9 +13,11 @@ Wants=network-online.target
 User=nexosix
 WorkingDirectory=/opt/nexosix
 EnvironmentFile=/opt/nexosix/.env
-ExecStart=/opt/nexosix/.venv/bin/gunicorn wsgi:app --bind 0.0.0.0:8000 --workers 2 --threads 4 --timeout 60
+ExecStart=/opt/nexosix/.venv/bin/gunicorn wsgi:app --bind 0.0.0.0:80 --workers 2 --threads 4 --timeout 60
 Restart=always
 RestartSec=5
+# usuário sem root escutando na porta 80
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target

@@ -1,5 +1,5 @@
 """Vigia da nuvem: agente mudo → DNS da catraca aponta pra nuvem; agente volta → DNS volta."""
-import os
+import pytest
 from datetime import datetime, timedelta, timezone
 
 from psycopg2.extras import Json
@@ -15,50 +15,122 @@ def _cfg(unidade_id, **campos):
     return db.query("SELECT * FROM unidades WHERE id = %s", (unidade_id,), one=True)
 
 
-def test_vigia_ativa_e_encerra_pelo_silencio_do_agente(seed, monkeypatch):
+@pytest.fixture
+def dominio(monkeypatch):
     monkeypatch.setenv("FAILOVER_NUVEM_ALVO", "nexosix-acesso.up.railway.app")
+    monkeypatch.setenv("FAILOVER_DOMINIO", "nexosix.com.br")
+
+
+def _agente(uid, **campos):
+    """Ping do agente agora, com o que ele reporta (ip_lan, web_ok…)."""
+    u = db.query("SELECT * FROM unidades WHERE id = %s", (uid,), one=True)
+    service.registrar_ping(u, {"versao": "2", **campos})
+    return db.query("SELECT * FROM unidades WHERE id = %s", (uid,), one=True)
+
+
+def test_vigia_ativa_e_encerra_pelo_silencio_do_agente(seed, dominio):
     uid = seed["unidade"]["id"]
     dns = failover.DnsNulo()
-    # sem dns_nome: nada acontece mesmo com agente mudo
-    assert failover.verificar(dns, apos_seg=60) == []
-    _cfg(uid, dns_nome="catraca-recreio.nexosix.com.br")
-    # agente nunca falou → assume
-    mudancas = failover.verificar(dns, apos_seg=60)
+    # escola sem agente instalado: nada a fazer
+    assert failover.verificar(dns, apos_seg=60, volta_seg=0) == []
+    _cfg(uid, espelho_token="t")
+    # agente nunca falou → assume, com o nome calculado da escola
+    mudancas = failover.verificar(dns, apos_seg=60, volta_seg=0)
     assert [m[1] for m in mudancas] == ["ativado"]
-    assert dns.chamadas[-1] == ("catraca-recreio.nexosix.com.br", "nexosix-acesso.up.railway.app", "CNAME")
+    assert dns.chamadas[-1] == (f"catraca-u{uid}.nexosix.com.br", "nexosix-acesso.up.railway.app", "CNAME")
     u = db.query("SELECT * FROM unidades WHERE id = %s", (uid,), one=True)
-    assert failover.em_failover(u) and u["config"]["failover"]["desde"]
+    assert failover.em_failover(u) and u["config"]["failover"]["desde"] and u["config"]["dns_nome"] == f"catraca-u{uid}.nexosix.com.br"
     ev = db.query("SELECT * FROM eventos WHERE tipo = %s", (tipos.FAILOVER_NUVEM,), one=True)
-    assert ev and ev["detalhes"]["dns"] == "catraca-recreio.nexosix.com.br"
+    assert ev and ev["detalhes"]["dns"] == f"catraca-u{uid}.nexosix.com.br"
     # continua mudo → não repete
-    assert failover.verificar(dns, apos_seg=60) == []
+    assert failover.verificar(dns, apos_seg=60, volta_seg=0) == []
     # agente deu sinal (com IP da LAN) → devolve
-    service.registrar_ping(u, {"versao": "1", "ip_lan": "192.168.0.50", "base_url": "http://catraca-recreio.nexosix.com.br"})
-    mudancas = failover.verificar(dns, apos_seg=60)
+    _agente(uid, ip_lan="192.168.0.50", web_ok=True)
+    mudancas = failover.verificar(dns, apos_seg=60, volta_seg=0)
     assert [m[1] for m in mudancas] == ["encerrado"]
-    assert dns.chamadas[-1] == ("catraca-recreio.nexosix.com.br", "192.168.0.50", "A")
+    assert dns.chamadas[-1] == (f"catraca-u{uid}.nexosix.com.br", "192.168.0.50", "A")
     u = db.query("SELECT * FROM unidades WHERE id = %s", (uid,), one=True)
     assert not failover.em_failover(u)
     assert db.query("SELECT 1 FROM eventos WHERE tipo = %s", (tipos.FAILOVER_FIM,), one=True)
     # agente some de novo (visto há 10 min) → assume de novo
     antigo = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
     _cfg(uid, agente_visto_em=antigo)
-    assert [m[1] for m in failover.verificar(dns, apos_seg=60)] == ["ativado"]
+    assert [m[1] for m in failover.verificar(dns, apos_seg=60, volta_seg=0)] == ["ativado"]
 
 
-def test_sem_ip_da_lan_nao_devolve(seed, monkeypatch):
-    monkeypatch.setenv("FAILOVER_NUVEM_ALVO", "nuvem.exemplo")
-    u = _cfg(seed["unidade"]["id"], dns_nome="c.exemplo")
+def test_volta_so_depois_de_estavel(seed, dominio):
+    """E12: PC que liga e desliga não faz o DNS pular a cada 30 s."""
+    uid = seed["unidade"]["id"]
+    _cfg(uid, espelho_token="t")
+    dns = failover.DnsNulo()
+    failover.verificar(dns, apos_seg=60, volta_seg=120)
+    _agente(uid, ip_lan="192.168.0.50", web_ok=True)
+    assert failover.verificar(dns, apos_seg=60, volta_seg=120) == []  # saudável há 0 s: ainda não
+    u = db.query("SELECT * FROM unidades WHERE id = %s", (uid,), one=True)
+    assert failover.em_failover(u) and u["config"]["failover"]["saudavel_desde"]
+    # 3 min saudável → devolve
+    fo = {**u["config"]["failover"], "saudavel_desde": (datetime.now(timezone.utc) - timedelta(minutes=3)).isoformat()}
+    _cfg(uid, failover=fo)
+    assert [m[1] for m in failover.verificar(dns, apos_seg=60, volta_seg=120)] == ["encerrado"]
+
+
+def test_site_do_agente_fora_conta_como_fora(seed, dominio):
+    """E6: worker dando sinal com o site (o que a catraca chama) caído também é falha."""
+    uid = seed["unidade"]["id"]
+    _cfg(uid, espelho_token="t")
+    dns = failover.DnsNulo()
+    _agente(uid, ip_lan="192.168.0.50", web_ok=True)
+    assert [m[1] for m in failover.verificar(dns, apos_seg=60, volta_seg=0)] == ["ip"]  # primeira vez: aponta o nome pro PC
+    _agente(uid, ip_lan="192.168.0.50", web_ok=False)
+    assert failover.verificar(dns, apos_seg=60, volta_seg=0) == []  # acabou de cair: espera
+    u = db.query("SELECT * FROM unidades WHERE id = %s", (uid,), one=True)
+    ag = {**u["config"]["agente"], "web_falha_desde": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()}
+    _cfg(uid, agente=ag)
+    assert [m[1] for m in failover.verificar(dns, apos_seg=60, volta_seg=0)] == ["ativado"]
+
+
+def test_dns_acompanha_o_ip_do_pc(seed, dominio):
+    """E16: o roteador trocou o IP do PC → o nome passa a apontar pro IP novo."""
+    uid = seed["unidade"]["id"]
+    _cfg(uid, espelho_token="t")
+    dns = failover.DnsNulo()
+    _agente(uid, ip_lan="192.168.0.50", web_ok=True)
+    failover.verificar(dns, apos_seg=60, volta_seg=0)
+    assert failover.verificar(dns, apos_seg=60, volta_seg=0) == []  # mesmo IP: nada
+    _agente(uid, ip_lan="192.168.0.77", web_ok=True)
+    assert [m[1] for m in failover.verificar(dns, apos_seg=60, volta_seg=0)] == ["ip"]
+    assert dns.chamadas[-1] == (f"catraca-u{uid}.nexosix.com.br", "192.168.0.77", "A")
+    # IP público reportado pelo agente é ignorado (S6)
+    _agente(uid, ip_lan="200.10.10.10", web_ok=True)
+    assert failover.verificar(dns, apos_seg=60, volta_seg=0) == []
+
+
+def test_nome_dns_preso_ao_dominio(seed, dominio):
+    """S6: nome fora do domínio da Nexosix (ex.: o site principal) nunca é apontado."""
+    assert failover.nome_valido("catraca-u1.nexosix.com.br")
+    assert not failover.nome_valido("nexosix.com.br") and not failover.nome_valido("www.outro.com") and not failover.nome_valido("x.nexosix.com.br.evil.com")
+    uid = seed["unidade"]["id"]
+    u = _cfg(uid, espelho_token="t", dns_nome="www.google.com")
+    assert failover.nome_da_unidade(u) == f"catraca-u{uid}.nexosix.com.br"
+
+
+def test_admin_da_escola_nao_troca_o_nome(cliente, seed, dominio):
+    uid = seed["unidade"]["id"]
+    cliente.post(f"/unidades/{uid}/config", data={"nome": "Recreio", "fuso": "America/Sao_Paulo", "dns_nome": "www.nexosix.com.br"})
+    assert db.query("SELECT config FROM unidades WHERE id = %s", (uid,), one=True)["config"].get("dns_nome") != "www.nexosix.com.br"
+
+
+def test_sem_ip_da_lan_nao_devolve(seed, dominio):
+    u = _cfg(seed["unidade"]["id"], espelho_token="t")
     dns = failover.DnsNulo()
     failover.ativar(u, dns)
-    u = _cfg(seed["unidade"]["id"], agente_visto_em=datetime.now(timezone.utc).isoformat())  # ping sem ip_lan
-    assert failover.verificar(dns, apos_seg=60) == []
+    _cfg(seed["unidade"]["id"], agente_visto_em=datetime.now(timezone.utc).isoformat())  # ping sem ip_lan
+    assert failover.verificar(dns, apos_seg=60, volta_seg=0) == []
     assert failover.em_failover(db.query("SELECT * FROM unidades WHERE id = %s", (u["id"],), one=True))
 
 
-def test_dns_falhando_nao_muda_estado(seed, monkeypatch):
-    monkeypatch.setenv("FAILOVER_NUVEM_ALVO", "nuvem.exemplo")
-    u = _cfg(seed["unidade"]["id"], dns_nome="c.exemplo")
+def test_dns_falhando_nao_muda_estado(seed, dominio):
+    u = _cfg(seed["unidade"]["id"], espelho_token="t")
 
     class DnsQuebrado:
         def apontar(self, *a):

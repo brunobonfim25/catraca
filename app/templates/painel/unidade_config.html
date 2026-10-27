@@ -15,8 +15,13 @@
     <small class="text-muted">Validar na catraca real qual opção dá a melhor experiência (ver integrations/controlid/README.md).</small>
   </div>
   <div class="mb-3"><label class="form-label">Nome DNS da catraca (redundância)</label>
-    <input class="form-control" name="dns_nome" value="{{ un.config.get('dns_nome') or '' }}" placeholder="catraca-recreio.nexosix.com.br">
-    <small class="text-muted">A catraca aponta para este nome. Normalmente resolve para o servidor da escola; se ele ficar mudo por 2 min, a nuvem troca o DNS para si mesma e assume a catraca; quando o servidor volta, devolve. Requer Cloudflare configurada na nuvem.</small></div>
+    {% if g.usuario.perfil == 'superadmin' %}
+    <input class="form-control" name="dns_nome" value="{{ un.config.get('dns_nome') or '' }}" placeholder="vazio = padrão (catraca-u{{ un.id }}.&lt;domínio&gt;)">
+    {% else %}
+    <div class="form-control-plaintext"><code>{{ un.config.get('dns_nome') or 'ainda não definido (domínio da Nexosix não configurado)' }}</code></div>
+    {% endif %}
+    <small class="text-muted">A catraca aponta para este nome. Normalmente resolve para o servidor da escola; se ele ficar mudo por 2 min, a nuvem troca o DNS para si mesma e assume a catraca; quando o servidor volta e fica 2 min estável, devolve.
+      <b>No roteador da escola</b>, cadastre este nome com o IP do servidor da escola (DNS local): sem isso, se a internet cair, a catraca não acha o servidor.</small></div>
   <button class="btn btn-primary">Salvar</button>
 </form>
 <div class="card col-lg-6 mt-4"><div class="card-body">
@@ -49,15 +54,20 @@
 <div class="card col-lg-6 mt-4"><div class="card-body">
   <h6>Servidor da escola</h6>
   <p class="small mb-2">É o PC na escola que fala com a catraca. {% if un.config.get('espelho_token') %}{% if un.config.get('agente_visto_em') %}<span class="text-success">Conectado — visto em {{ un.config.agente_visto_em[:16]|replace('T',' ') }} UTC</span>{% else %}<span class="text-danger">Ainda não se conectou</span>{% endif %}.{% else %}Ainda não instalado: gere o token abaixo e depois baixe o instalador.{% endif %} <span class="text-muted">Código desta escola: {{ un.id }}.</span></p>
+  {% set ag = un.config.get('agente') or {} %}
+  {% if ag.get('schema') and schema_nuvem and ag.schema != schema_nuvem %}<div class="alert alert-warning py-1 small">Servidor da escola desatualizado (banco {{ ag.schema[:3] }}, nuvem {{ schema_nuvem[:3] }}): rode o instalador de novo no PC da escola.</div>{% endif %}
+  {% if ag.get('web_ok') == false %}<div class="alert alert-danger py-1 small">O site do servidor da escola (o que a catraca chama) não está respondendo.</div>{% endif %}
+  {% if ag.get('desvio_relogio_seg') is not none and (ag.desvio_relogio_seg > 60 or ag.desvio_relogio_seg < -60) %}<div class="alert alert-warning py-1 small">Relógio do PC da escola {{ ag.desvio_relogio_seg }} s diferente da nuvem: acerte a hora do Windows.</div>{% endif %}
+  {% if quarentena %}<div class="alert alert-danger py-1 small">{{ quarentena }} alteração(ões) do servidor da escola não puderam ser aplicadas (quarentena). Avise o suporte Nexosix.</div>{% endif %}
   {% if un.config.get('espelho_token') and modo == 'nuvem' %}
   <div class="border rounded p-2 mb-2 bg-light">
     <b>Instalar no PC da escola</b> (Windows, qualquer técnico, pode ser por acesso remoto):
     <ol class="mb-1 small">
-      <li><a href="{{ url_for('espelho.instalador_cmd', token=un.config.espelho_token) }}">Baixar <b>instalar-agente.cmd</b></a> e abrir com dois cliques no PC da escola (ele pede administrador).</li>
+      <li><a href="{{ url_for('espelho.instalador_cmd', unidade_id=un.id) }}">Baixar <b>instalar-agente.cmd</b></a> e abrir com dois cliques no PC da escola (ele pede administrador).</li>
       <li>Esperar terminar (10–20 min na primeira vez: baixa Python, PostgreSQL e o programa). Esta tela passa a mostrar "Conectado".</li>
       <li>Depois, em Configuração › Catraca: cadastrar a catraca com o IP dela → Testar conexão → Configurar Monitor.</li>
     </ol>
-    <small class="text-muted">Rodar o mesmo arquivo de novo atualiza o servidor. O arquivo contém o token desta escola: não compartilhe fora dela. Ou, no PowerShell como administrador: <code>irm {{ url_for('espelho.instalador_ps1', token=un.config.espelho_token, _external=True) }} | iex</code></small>
+    <small class="text-muted">Rodar o mesmo arquivo de novo atualiza o servidor. O arquivo contém o token desta escola: não compartilhe fora dela. Apague o arquivo depois de instalar.</small>
   </div>
   {% endif %}
   <form method="post" action="{{ url_for('painel.token_agente', unidade_id=un.id) }}" onsubmit="return confirm('Gerar novo token? O servidor atual para de sincronizar até receber o novo (reinstale com o novo .cmd).')"><button class="btn btn-sm btn-outline-primary">{{ 'Gerar novo token' if un.config.get('espelho_token') else 'Gerar token do servidor' }}</button></form>

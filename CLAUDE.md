@@ -159,12 +159,19 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
 - **Agente** (`MODO=local`, mini PC na escola, NSSM/waitress ou systemd): cópia do cadastro da
   unidade + API da catraca (Monitor, modo Pro) + worker (fila → catraca, coleta, sync). Sem
   painel: qualquer rota que não seja API redireciona para a nuvem. Fica ligado antes da
-  primeira entrada; `BASE_URL=http://<IP fixo>:8000` é o endereço que a catraca usa.
-- **Sync bidirecional por outbox** (`espelho_outbox`, triggers 003/004): a nuvem marca cada
-  linha com `nexosix.unidade` (GUC); o agente puxa as da sua unidade (`/reverso`, cursor em
-  `espelho_estado`) e empurra as suas. Carga inicial por `/snapshot`. Aplicar nunca gera eco.
-  Donos: nuvem → cadastro, itens novos da fila, liberação manual; agente → eventos, presença,
-  esperas, status de sync e da catraca (colunas protegidas em `COLUNAS_DO_AGENTE`).
+  primeira entrada; escuta na porta 80; a catraca chama o nome DNS da escola.
+- **Sync bidirecional por outbox** (`espelho_outbox`, triggers 003/004/009): cada linha é
+  marcada com a escola **derivada da própria linha** (`espelho_unidades_da_linha`; GUC só de
+  reserva). O agente puxa as da sua unidade (`/api/espelho/reverso`, cursor `(xid, id)` em
+  `espelho_estado`, só transações terminadas, item = estado atual da linha) e empurra as suas
+  (`/api/espelho/receber`, confirmadas por id). Carga inicial: `/snapshot` (REPEATABLE READ,
+  sem fotos) + `/fotos` paginado; `carga_em` marca o fim. Token no cabeçalho `X-Espelho-Token`,
+  `X-Agente-Id` (um agente ativo por escola, 409 pro segundo). Aplicar nunca gera eco; item com
+  erro vai pra `espelho_quarentena` e é retentado. Donos: nuvem → cadastro, itens novos da
+  fila, liberação manual; agente → eventos, presença (a mais nova ganha), esperas, status de
+  sync e da catraca. **A nuvem só aceita do agente o que está em `REGRAS_DO_AGENTE`** (o resto é
+  recusado: o token está no PC da escola). Hash de senha nunca desce pro agente. Outbox de
+  escola com agente nunca é apagado em silêncio: passou de 30 dias → `espelho_recarga`.
 - **Comandos à catraca** (testar, Monitor, modo, hora, liberar) são itens da `fila_sync`
   criados pelo painel e executados pelo agente — a nuvem nunca fala com a catraca.
 - **Ids**: agente usa a faixa `unidade_id × 10M` (`flask configurar-local`); nuvem, ids pequenos.
@@ -173,10 +180,14 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   recepção libera pelo portão PCD. Status `contingencia` fica no painel até o `operation_mode`.
 - **Internet fora**: agente segue decidindo com a cópia local; fila sobe depois.
 - **Redundância** (27/10): a catraca sempre consulta o agente primeiro; a nuvem é reserva.
-  A catraca aponta para um **nome DNS** (`unidades.config.dns_nome`); o vigia da nuvem
+  A catraca aponta para um **nome DNS** (`catraca-u<id>.<FAILOVER_DOMINIO>`, gravado em
+  `unidades.config.dns_nome`; só superadmin troca e só dentro do domínio); o vigia da nuvem
   (`app/espelho/failover.py`, worker da nuvem a cada 30 s) troca o registro na Cloudflare
-  para a nuvem quando o agente fica mudo (`FAILOVER_APOS_SEG`) e devolve para o IP da LAN
-  (vem no ping do agente) quando ele volta. A catraca inicia as conexões, então funciona
+  para a nuvem quando o agente fica mudo ou o site dele cai (`FAILOVER_APOS_SEG`) e devolve
+  para o IP da LAN (só IP privado, vem no ping a cada 30 s numa thread própria) depois de
+  `FAILOVER_VOLTA_SEG` estável. Token da catraca é **por escola** (`config.monitor_token`).
+  Roteador da escola precisa de DNS local com o nome → IP do PC (senão, sem internet, a
+  catraca não acha o agente). A catraca inicia as conexões, então funciona
   sem VPN; as escritas que a nuvem faz nesse período são marcadas com a unidade
   (`g.unidade_api_id` nas rotas da catraca) e o agente puxa ao voltar. Agente escuta na
   porta 80 (mesma da Cloudflare). [HW] nome/HTTP/cache DNS na catraca. VPN

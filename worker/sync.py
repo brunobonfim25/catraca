@@ -79,6 +79,7 @@ def _garantir_user_id(adapter, dispositivo, pessoa):
 
 
 NOME_REGRA_SO_ENTRADA = "Nexosix - so entrada"
+DESVIO_MAX_SEG = 60
 
 
 def _regra(adapter, dispositivo, chave, nome, portais=None):
@@ -119,6 +120,21 @@ def _precisa_responsavel(pessoa):
     return bool(r["exige_responsavel_saida"])
 
 
+def destino_da_catraca(dispositivo):
+    """(host, porta, token) que a catraca usa pra chamar o servidor (Monitor e modo Pro).
+
+    Com redundância, o NOME DNS da escola na porta 80 — o mesmo que a nuvem atende quando
+    assume — e o token da escola (a nuvem só aceita o token da própria escola). Sem nome, o
+    endereço deste servidor (BASE_URL) e, sem token da escola, o MONITOR_TOKEN do .env."""
+    un = db.query("SELECT config FROM unidades WHERE id = %s", (dispositivo["unidade_id"],), one=True)
+    cfg = (un or {}).get("config") or {}
+    token = cfg.get("monitor_token") or os.environ.get("MONITOR_TOKEN", "")
+    if cfg.get("dns_nome"):
+        return cfg["dns_nome"], 80, token
+    base = urlparse(os.environ.get("BASE_URL", "http://127.0.0.1:8000"))
+    return base.hostname, base.port or (443 if base.scheme == "https" else 80), token
+
+
 def processar_item(item, adapter, dispositivo):
     pessoa = db.query("SELECT * FROM pessoas WHERE id = %s", (item["pessoa_id"],), one=True) if item["pessoa_id"] else None
     tipo = item["tipo"]
@@ -126,6 +142,13 @@ def processar_item(item, adapter, dispositivo):
 
     # ---- comandos de catraca (vêm do painel na nuvem; só o agente alcança o equipamento)
     if tipo == "set_clock":
+        # A hora vai DESTE PC pra catraca. Revisão (E16): com o relógio do PC errado (bateria da
+        # BIOS, Windows sem sincronizar) o "acertar hora" desacertava a catraca e as entradas
+        # caíam fora da janela do turno. Só acerta se o PC bate com a nuvem.
+        est = db.query("SELECT desvio_relogio_seg FROM espelho_estado WHERE id = 1", one=True)
+        desvio = (est or {}).get("desvio_relogio_seg")
+        if desvio is not None and abs(desvio) > DESVIO_MAX_SEG:
+            raise ComandoVencido(f"relógio deste servidor está {desvio:+d} s diferente da nuvem; acerte a hora do Windows antes de acertar a catraca")
         adapter.set_clock(fuso=payload.get("fuso", "America/Sao_Paulo"))
         return
     if tipo == "liberar":
@@ -143,13 +166,12 @@ def processar_item(item, adapter, dispositivo):
         )
         return
     if tipo == "configurar_monitor":
-        # O Monitor aponta pra ESTE servidor (quem fala com a catraca), nunca pra nuvem
-        base = urlparse(os.environ.get("BASE_URL", "http://127.0.0.1:8000"))
-        token = os.environ.get("MONITOR_TOKEN", "")
-        adapter.configurar_monitor(base.hostname, base.port or (443 if base.scheme == "https" else 80), f"api/notifications/{token}")
+        host, porta, token = destino_da_catraca(dispositivo)
+        adapter.configurar_monitor(host, porta, f"api/notifications/{token}")
         return
     if tipo == "modo":
-        url = f"{os.environ.get('BASE_URL', 'http://127.0.0.1:8000').rstrip('/')}/api/catraca/{os.environ.get('MONITOR_TOKEN', '')}"
+        host, porta, token = destino_da_catraca(dispositivo)
+        url = f"http://{host}{'' if porta == 80 else f':{porta}'}/api/catraca/{token}"
         novo = payload.get("modo", "standalone")
         adapter.configurar_modo_online(url, ativar=(novo == "pro"))
         db.execute("UPDATE dispositivos SET modo = %s WHERE id = %s", (novo, dispositivo["id"]))
