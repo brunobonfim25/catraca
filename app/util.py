@@ -66,3 +66,13 @@ def mesmo_telefone(a, b):
     if len(a) < 10 or len(b) < 10:
         return False
     return (a[:2], a[-8:]) == (b[:2], b[-8:])
+
+
+def formatar_telefone(valor):
+    """'21988880001' → '(21) 98888-0001'. Formato desconhecido volta como veio."""
+    d = normalizar_telefone(valor)
+    if len(d) == 11:
+        return f"({d[:2]}) {d[2:7]}-{d[7:]}"
+    if len(d) == 10:
+        return f"({d[:2]}) {d[2:6]}-{d[6:]}"
+    return valor or ""

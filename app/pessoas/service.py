@@ -49,21 +49,26 @@ def atualizar_aluno(pessoa_id, nome, turma_id, matricula=None, saida_autonoma=No
     dispositivos.enfileirar_pessoa(pessoa_id, p["unidade_id"], com_foto=False)
 
 
-def criar_responsavel(unidade_id, nome, telefone=None, documento=None):
+def _email(valor):
+    v = (valor or "").strip().lower()
+    return v if "@" in v and "." in v.split("@")[-1] else None
+
+
+def criar_responsavel(unidade_id, nome, telefone=None, documento=None, email=None):
     pessoa_id = _criar_pessoa(unidade_id, "responsavel", nome, documento)
     resp_id = db.execute(
-        "INSERT INTO responsaveis (pessoa_id, telefone) VALUES (%s,%s) RETURNING id",
-        (pessoa_id, (telefone or "").strip() or None), returning=True,
+        "INSERT INTO responsaveis (pessoa_id, telefone, email) VALUES (%s,%s,%s) RETURNING id",
+        (pessoa_id, (telefone or "").strip() or None, _email(email)), returning=True,
     )["id"]
     auditar("criar", "responsavel", resp_id, depois={"nome": nome}, unidade_id=unidade_id)
     dispositivos.enfileirar_pessoa(pessoa_id, unidade_id, com_foto=False)
     return pessoa_id, resp_id
 
 
-def atualizar_responsavel(pessoa_id, nome, telefone=None, documento=None):
+def atualizar_responsavel(pessoa_id, nome, telefone=None, documento=None, email=None):
     db.execute("UPDATE pessoas SET nome = %s, documento = %s, atualizado_em = now() WHERE id = %s", (nome.strip(), documento or None, pessoa_id))
-    db.execute("UPDATE responsaveis SET telefone = %s WHERE pessoa_id = %s", ((telefone or "").strip() or None, pessoa_id))
-    auditar("editar", "responsavel", pessoa_id, depois={"nome": nome, "telefone": telefone})
+    db.execute("UPDATE responsaveis SET telefone = %s, email = %s WHERE pessoa_id = %s", ((telefone or "").strip() or None, _email(email), pessoa_id))
+    auditar("editar", "responsavel", pessoa_id, depois={"nome": nome, "telefone": telefone, "email": _email(email)})
     p = db.query("SELECT unidade_id FROM pessoas WHERE id = %s", (pessoa_id,), one=True)
     dispositivos.enfileirar_pessoa(pessoa_id, p["unidade_id"], com_foto=False)
 
@@ -195,7 +200,7 @@ def buscar(unidade_id, termo=None, tipo=None, turma_id=None, incluir_desligados=
 def detalhe(pessoa_id):
     return db.query(
         "SELECT p.*, a.id AS aluno_id, a.turma_id, a.matricula, a.saida_autonoma, t.nome AS turma_nome, "
-        "r.id AS responsavel_id, r.telefone, r.telegram_chat_id, r.telegram_ativado_em, "
+        "r.id AS responsavel_id, r.telefone, r.email, r.telegram_chat_id, r.telegram_ativado_em, "
         "f.id AS funcionario_id, f.cargo, f.escala, (pf.pessoa_id IS NOT NULL) AS tem_foto "
         "FROM pessoas p LEFT JOIN alunos a ON a.pessoa_id = p.id LEFT JOIN turmas t ON t.id = a.turma_id "
         "LEFT JOIN responsaveis r ON r.pessoa_id = p.id LEFT JOIN funcionarios f ON f.pessoa_id = p.id "
@@ -230,3 +235,58 @@ def registrar_consentimento(pessoa_id, assinado_por, assinado_em, arquivo_nome=N
 
 def tem_consentimento(pessoa_id):
     return db.query("SELECT 1 FROM consentimentos_lgpd WHERE pessoa_id = %s LIMIT 1", (pessoa_id,), one=True) is not None
+
+
+# ---------------------------------------------------------------- pronto para a catraca?
+
+SITUACOES = {
+    "falta_foto": ("falta", "Falta foto"),
+    "falta_responsavel": ("falta", "Falta responsável"),
+    "erro_catraca": ("falta", "Erro na catraca — refazer foto"),
+    "responsavel_sem_foto": ("atencao", "Responsável sem foto"),
+    "enviando": ("atencao", "Enviando para a catraca"),
+    "pronto": ("pronto", "Pronto"),
+}
+
+
+def _situacao(r):
+    """Ordem = o que trava primeiro. Responsável sem foto conta porque, na saída "só com
+    responsável", é a face dele no leitor de fora que libera a criança."""
+    precisa = (not r["saida_autonoma"]) if r["saida_autonoma"] is not None else bool(r["exige_responsavel_saida"])
+    if not r["tem_foto"]:
+        chave = "falta_foto"
+    elif precisa and not r["n_resp"]:
+        chave = "falta_responsavel"
+    elif r["disp_erro"]:
+        chave = "erro_catraca"
+    elif precisa and not r["n_resp_foto"]:
+        chave = "responsavel_sem_foto"
+    elif r["disp_pendente"]:
+        chave = "enviando"
+    else:
+        chave = "pronto"
+    classe, texto = SITUACOES[chave]
+    if chave == "pronto" and not r["n_disp"]:
+        texto = "Pronto (falta instalar a catraca)"
+    return {"chave": chave, "classe": classe, "texto": texto, "erro": r["msg_erro"], "precisa_responsavel": precisa,
+            "n_resp": r["n_resp"], "n_resp_telegram": r["n_resp_telegram"]}
+
+
+def situacao_alunos(unidade_id):
+    """{pessoa_id: situação} de todos os alunos da escola, numa consulta só."""
+    rows = db.query(
+        "SELECT a.pessoa_id, a.saida_autonoma, t.exige_responsavel_saida, (pf.pessoa_id IS NOT NULL) AS tem_foto, "
+        "coalesce(rs.n, 0) AS n_resp, coalesce(rs.n_foto, 0) AS n_resp_foto, coalesce(rs.n_tg, 0) AS n_resp_telegram, "
+        "coalesce(ds.n, 0) AS n_disp, coalesce(ds.erro, 0) AS disp_erro, coalesce(ds.pendente, 0) AS disp_pendente, ds.msg_erro "
+        "FROM alunos a JOIN pessoas p ON p.id = a.pessoa_id JOIN turmas t ON t.id = a.turma_id "
+        "LEFT JOIN pessoa_fotos pf ON pf.pessoa_id = p.id "
+        "LEFT JOIN LATERAL (SELECT count(*) AS n, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM pessoa_fotos f WHERE f.pessoa_id = rp.id)) AS n_foto, "
+        "  count(*) FILTER (WHERE r.telegram_chat_id IS NOT NULL) AS n_tg FROM aluno_responsavel ar "
+        "  JOIN responsaveis r ON r.id = ar.responsavel_id JOIN pessoas rp ON rp.id = r.pessoa_id "
+        "  WHERE ar.aluno_id = a.id AND rp.status = 'ativo') rs ON true "
+        "LEFT JOIN LATERAL (SELECT count(*) AS n, count(*) FILTER (WHERE dp.foto_sync_status = 'erro') AS erro, "
+        "  count(*) FILTER (WHERE dp.foto_sync_status = 'pendente') AS pendente, max(dp.erro) AS msg_erro "
+        "  FROM dispositivo_pessoa dp JOIN dispositivos d ON d.id = dp.dispositivo_id WHERE dp.pessoa_id = p.id AND d.ativo) ds ON true "
+        "WHERE p.unidade_id = %s", (unidade_id,),
+    )
+    return {r["pessoa_id"]: _situacao(r) for r in rows}

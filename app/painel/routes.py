@@ -249,9 +249,54 @@ def unidade_config(unidade_id):
         auditar("config", "unidade", unidade_id, antes=un["config"], depois=cfg)
         flash("Unidade atualizada", "success")
         return redirect(url_for("painel.unidade_config", unidade_id=unidade_id))
-    from ..notificacoes import telegram
+    from ..notificacoes import convites, email, telegram
 
-    return render_template("painel/unidade_config.html", un=un, fusos=fusos.FUSOS_BRASIL, link_escola=telegram.link_escola(un["id"]))
+    tem_logo = db.query("SELECT 1 FROM unidade_logos WHERE unidade_id = %s", (unidade_id,), one=True) is not None
+    return render_template("painel/unidade_config.html", un=un, fusos=fusos.FUSOS_BRASIL, link_escola=telegram.link_escola(un["id"]),
+                           convite_texto=convites.texto_da_escola(un), nome_convite=convites.nome_escola(un), tem_logo=tem_logo,
+                           email_ok=email.configurado())
+
+
+LOGO_MAX_BYTES = 300 * 1024
+
+
+@bp.post("/unidades/<int:unidade_id>/convite")
+@exige("configurar_escola")
+def unidade_convite(unidade_id):
+    """Texto do convite aos responsáveis, nome da escola nas mensagens, e-mail de resposta e logotipo."""
+    from ..notificacoes import convites
+
+    un = unidade_atual_ou_403()
+    if un["id"] != unidade_id:
+        abort(404)
+    f = request.form
+    texto = (f.get("convite_texto") or "").replace("\r\n", "\n").strip()
+    if texto and "{link}" not in texto:
+        flash("O texto do convite precisa ter {link} — é onde entra o link de ativação de cada responsável.", "danger")
+        return redirect(url_for("painel.unidade_config", unidade_id=unidade_id) + "#convite")
+    cfg = {
+        "convite_texto": None if not texto or texto == convites.TEXTO_PADRAO else texto,
+        "nome_convite": (f.get("nome_convite") or "").strip()[:120] or None,
+        "email_contato": (f.get("email_contato") or "").strip().lower()[:120] or None,
+    }
+    db.execute("UPDATE unidades SET config = config || %s WHERE id = %s", (json.dumps(cfg), unidade_id))
+    logo = request.files.get("logo")
+    if f.get("remover_logo") == "1":
+        db.execute("DELETE FROM unidade_logos WHERE unidade_id = %s", (unidade_id,))
+    elif logo and logo.filename:
+        dados = logo.read()
+        tipo = "image/png" if dados[:8] == b"\x89PNG\r\n\x1a\n" else ("image/jpeg" if dados[:2] == b"\xff\xd8" else None)
+        if not tipo or len(dados) > LOGO_MAX_BYTES:
+            flash("Logotipo precisa ser PNG ou JPG de até 300 KB", "danger")
+            return redirect(url_for("painel.unidade_config", unidade_id=unidade_id) + "#convite")
+        import psycopg2
+
+        db.execute("INSERT INTO unidade_logos (unidade_id, conteudo, tipo) VALUES (%s,%s,%s) ON CONFLICT (unidade_id) "
+                   "DO UPDATE SET conteudo = EXCLUDED.conteudo, tipo = EXCLUDED.tipo, atualizado_em = now()",
+                   (unidade_id, psycopg2.Binary(dados), tipo))
+    auditar("config_convite", "unidade", unidade_id, depois=cfg)
+    flash("Convite atualizado", "success")
+    return redirect(url_for("painel.unidade_config", unidade_id=unidade_id) + "#convite")
 
 
 @bp.post("/unidades/<int:unidade_id>/token-agente")

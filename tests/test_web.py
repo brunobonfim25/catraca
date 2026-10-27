@@ -60,7 +60,9 @@ def test_telas_principais_abrem(cliente, seed):
                 f"/painel/historico/{seed['maria']['pessoa_id']}", "/painel/auditoria", "/turmas", "/unidades", "/dispositivos/", f"/dispositivos/{seed['dispositivo']['id']}",
                 "/pessoas/", f"/pessoas/{seed['maria']['pessoa_id']}", f"/pessoas/{seed['ana']['pessoa_id']}", f"/pessoas/alunos/{seed['maria']['pessoa_id']}/editar",
                 "/pessoas/responsaveis/novo?aluno_id=1", "/pessoas/funcionarios/novo", "/pessoas/visitantes/novo", "/usuarios", "/senha",
-                f"/unidades/{seed['unidade']['id']}/config", "/api/painel/estado"]:
+                f"/unidades/{seed['unidade']['id']}/config", "/api/painel/estado", "/pessoas/?tipo=aluno", "/pessoas/?tipo=responsavel",
+                "/pessoas/?pendencia=foto", "/pessoas/importar", "/convites", "/convites?filtro=nunca", f"/convites/{seed['ana']['responsavel_id']}/previa",
+                f"/telegram/ativar/{seed['ana']['responsavel_id']}"]:
         assert cliente.get(url).status_code == 200, url
 
 

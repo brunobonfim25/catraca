@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block titulo %}Convites — Nexosix Acesso{% endblock %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-start">
+  <div>
+    <h3 class="mb-0">Convites</h3>
+    <small class="text-muted">Responsáveis que ainda não ativaram os avisos no Telegram. O Telegram só deixa a escola mandar aviso depois que o responsável toca no link e aperta Iniciar.</small>
+  </div>
+</div>
+
+<p class="chips my-3">
+  <span class="situacao pronto">{{ resumo.ativos }} já recebem avisos</span>
+  <span class="situacao falta">{{ resumo.faltam }} ainda não ativaram</span>
+  <span class="situacao cinza">{{ resumo.nunca }} nunca convidados</span>
+  {% if resumo.na_fila %}<span class="situacao atencao">{{ resumo.na_fila }} e-mail(s) saindo</span>{% endif %}
+</p>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-4"><div class="card h-100"><div class="card-body">
+    <h6>WhatsApp <small class="text-muted">· sem custo</small></h6>
+    <p class="small">Abre o WhatsApp da secretaria com a mensagem pronta para cada família. Um clique por família; depois é só apertar enviar.</p>
+    <button class="btn btn-success btn-sm" id="proximo-wa" type="button">Próximo pelo WhatsApp (<span id="n-wa">0</span>)</button>
+  </div></div></div>
+  <div class="col-md-4"><div class="card h-100"><div class="card-body">
+    <h6>E-mail <small class="text-muted">· todos de uma vez</small></h6>
+    {% if email_ok %}
+      <p class="small">Um e-mail por responsável com o link dele e o passo a passo. Texto e logotipo em Configuração › Escola.</p>
+      <form method="post" action="{{ url_for('notificacoes.convites_email') }}" onsubmit="return confirm('Enviar o convite por e-mail para todos desta lista que têm e-mail?')">
+        <input type="hidden" name="todos" value="1"><input type="hidden" name="filtro" value="{{ filtro or '' }}">
+        <button class="btn btn-primary btn-sm" {{ 'disabled' if not resumo.com_email }}>Enviar para todos com e-mail ({{ resumo.com_email }})</button>
+      </form>
+    {% else %}
+      <p class="small text-muted mb-1">O envio de e-mail ainda não está configurado na nuvem.</p>
+      <p class="small text-muted">Enquanto isso, use o WhatsApp ou o link da escola.</p>
+    {% endif %}
+  </div></div></div>
+  <div class="col-md-4"><div class="card h-100"><div class="card-body">
+    <h6>Link da escola <small class="text-muted">· cartaz e grupo da turma</small></h6>
+    <p class="small">Um link só para todos: o responsável compartilha o telefone no Telegram e o sistema acha o cadastro.</p>
+    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('notificacoes.qr_escola', unidade_id=unidade.id) }}" target="_blank">QR Code para imprimir</a>
+    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="navigator.clipboard.writeText('{{ link_escola }}'); this.textContent = 'Copiado'">Copiar link</button>
+  </div></div></div>
+</div>
+
+<ul class="nav nav-pills mb-2">
+  {% for k, rot in [(None, 'Todos'), ('nunca', 'Nunca convidados'), ('convidados', 'Convidados que não ativaram')] %}
+  <li class="nav-item"><a class="nav-link py-1 {{ 'active' if filtro == k }}" href="{{ url_for('notificacoes.convites', filtro=k) }}">{{ rot }}</a></li>
+  {% endfor %}
+</ul>
+
+<form method="post" action="{{ url_for('notificacoes.convites_email') }}" id="form-email"></form>
+<table class="table table-sm bg-white align-middle">
+  <thead><tr>{% if email_ok %}<th><input type="checkbox" class="form-check-input" title="selecionar todos com e-mail" onclick="document.querySelectorAll('.sel-email').forEach(c => c.checked = this.checked)"></th>{% endif %}<th>Responsável</th><th>Alunos</th><th>Celular</th><th>E-mail</th><th>Último convite</th><th></th></tr></thead>
+  <tbody>
+  {% for l in linhas %}
+    <tr id="linha-{{ l.id }}">
+      {% if email_ok %}<td>{% if l.email %}<input type="checkbox" class="form-check-input sel-email" name="ids" value="{{ l.id }}" form="form-email">{% endif %}</td>{% endif %}
+      <td><a href="{{ url_for('pessoas.detalhe', pessoa_id=l.pessoa_id) }}">{{ l.nome }}</a></td>
+      <td><small>{{ l.alunos or '—' }}</small></td>
+      <td><small>{{ l.telefone|telefone if l.telefone else '—' }}</small></td>
+      <td><small>{{ l.email or '—' }}</small></td>
+      <td class="ult"><small>
+        {% if l.ult_canal %}{{ 'WhatsApp' if l.ult_canal == 'whatsapp' else 'E-mail' }} · {{ l.ult_em|data_hora(fuso) }}
+          {% if l.ult_status == 'pendente' %}<span class="text-warning">na fila</span>{% elif l.ult_status == 'erro' %}<span class="text-danger" title="{{ l.ult_erro }}">não saiu</span>{% endif %}
+          {% if l.n_convites > 1 %}<span class="text-muted">({{ l.n_convites }}×)</span>{% endif %}
+        {% else %}<span class="text-muted">nunca</span>{% endif %}
+      </small></td>
+      <td class="text-nowrap">
+        {% if l.telefone %}<form method="post" action="{{ url_for('notificacoes.convite_whatsapp', responsavel_id=l.id) }}" target="_blank" class="d-inline wa" data-linha="{{ l.id }}" data-nunca="{{ '1' if not l.ult_canal else '0' }}"><button class="btn btn-sm btn-outline-success">WhatsApp</button></form>{% endif %}
+        {% if l.email %}<a class="btn btn-sm btn-outline-secondary" target="_blank" href="{{ url_for('notificacoes.convite_previa', responsavel_id=l.id) }}">ver e-mail</a>{% endif %}
+      </td>
+    </tr>
+  {% else %}<tr><td colspan="7" class="text-muted">{% if filtro %}Ninguém neste filtro.{% else %}Todos os responsáveis já recebem avisos. 🎉{% endif %}</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% if email_ok and linhas %}<button class="btn btn-sm btn-primary" form="form-email">Enviar e-mail para os selecionados</button>{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+// "Próximo pelo WhatsApp": abre a próxima família ainda não convidada nesta sessão (primeiro
+// quem nunca recebeu convite). Cada clique abre uma aba que cai direto no WhatsApp.
+const formsWa = [...document.querySelectorAll('form.wa')].sort((a, b) => b.dataset.nunca - a.dataset.nunca);
+const feitos = new Set();
+function marcar(f) {
+  feitos.add(f);
+  const ult = document.querySelector(`#linha-${f.dataset.linha} .ult`);
+  if (ult) ult.innerHTML = '<small class="text-success">WhatsApp · agora</small>';
+  f.querySelector('button').classList.replace('btn-outline-success', 'btn-success');
+  document.getElementById('n-wa').textContent = formsWa.length - feitos.size;
+}
+formsWa.forEach(f => f.addEventListener('submit', () => marcar(f)));
+document.getElementById('n-wa').textContent = formsWa.length;
+document.getElementById('proximo-wa').addEventListener('click', () => {
+  const f = formsWa.find(x => !feitos.has(x));
+  if (!f) { alert('Todas as famílias desta lista já foram abertas no WhatsApp.'); return; }
+  marcar(f); f.submit();
+  document.getElementById('linha-' + f.dataset.linha).scrollIntoView({block: 'center'});
+});
+</script>
+{% endblock %}

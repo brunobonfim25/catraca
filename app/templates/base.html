@@ -27,11 +27,13 @@
 
     {% if tem_permissao('cadastrar_pessoas') and unidade %}
     <div class="grupo">Cadastro</div>
-    {{ item('Alunos', url_for('pessoas.lista', tipo='aluno'), ep.startswith('pessoas.') and args.get('tipo', 'aluno') == 'aluno' and not args.get('pendencia') and ep != 'pessoas.visitante_novo') }}
+    {{ item('Alunos', url_for('pessoas.lista', tipo='aluno'), ep.startswith('pessoas.') and args.get('tipo', 'aluno') == 'aluno' and not args.get('pendencia') and ep != 'pessoas.visitante_novo' and not ep.startswith('pessoas.importar')) }}
     {{ item('Responsáveis', url_for('pessoas.lista', tipo='responsavel'), ep == 'pessoas.lista' and args.get('tipo') == 'responsavel') }}
     {{ item('Funcionários', url_for('pessoas.lista', tipo='funcionario'), ep == 'pessoas.lista' and args.get('tipo') == 'funcionario') }}
     {{ item('Turmas', url_for('painel.turmas'), ep == 'painel.turmas') }}
     {{ item('Pendências', url_for('pessoas.lista', pendencia='foto'), ep == 'pessoas.lista' and args.get('pendencia')) }}
+    {{ item('Convites', url_for('notificacoes.convites'), ep.startswith('notificacoes.convite')) }}
+    {% if tem_permissao('gerir_turmas') %}{{ item('Importar planilha', url_for('pessoas.importar'), ep.startswith('pessoas.importar')) }}{% endif %}
     {% endif %}
 
     {% if tem_permissao('ver_relatorios') and unidade %}

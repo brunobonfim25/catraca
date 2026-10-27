@@ -4,8 +4,9 @@
 <form method="post" class="col-lg-6">
   <div class="mb-2"><label class="form-label">Nome completo</label><input class="form-control" name="nome" value="{{ p.nome if p else '' }}" required autofocus></div>
   <div class="row g-2">
-    <div class="col-md-6 mb-2"><label class="form-label">Telefone</label><input class="form-control" name="telefone" value="{{ p.telefone or '' if p else '' }}" placeholder="(21) 9…"></div>
-    <div class="col-md-6 mb-2"><label class="form-label">Documento</label><input class="form-control" name="documento" value="{{ p.documento or '' if p else '' }}"></div>
+    <div class="col-md-4 mb-2"><label class="form-label">Celular</label><input class="form-control" name="telefone" value="{{ p.telefone or '' if p else '' }}" placeholder="(21) 9…"><small class="text-muted">Ativa os avisos do Telegram</small></div>
+    <div class="col-md-5 mb-2"><label class="form-label">E-mail</label><input class="form-control" type="email" name="email" value="{{ p.email or '' if p else '' }}"><small class="text-muted">Para o convite por e-mail</small></div>
+    <div class="col-md-3 mb-2"><label class="form-label">Documento</label><input class="form-control" name="documento" value="{{ p.documento or '' if p else '' }}"></div>
   </div>
   {% if aluno_id %}
   <input type="hidden" name="aluno_id" value="{{ aluno_id }}">

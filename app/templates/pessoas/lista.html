@@ -18,7 +18,7 @@
     {% if tipo == 'responsavel' %}<a class="btn btn-primary" href="{{ url_for('pessoas.responsavel_novo') }}">+ Novo responsável</a>
     {% elif tipo == 'funcionario' %}<a class="btn btn-primary" href="{{ url_for('pessoas.funcionario_novo') }}">+ Novo funcionário</a>
     {% elif tipo == 'visitante' %}<a class="btn btn-primary" href="{{ url_for('pessoas.visitante_novo') }}">+ Visitante</a>
-    {% else %}<a class="btn btn-primary" href="{{ url_for('pessoas.aluno_novo') }}">+ Novo aluno</a>{% endif %}
+    {% else %}<div class="d-flex gap-2">{% if tem_permissao('gerir_turmas') %}<a class="btn btn-outline-primary" href="{{ url_for('pessoas.importar') }}">Importar planilha</a>{% endif %}<a class="btn btn-primary" href="{{ url_for('pessoas.aluno_novo') }}">+ Novo aluno</a></div>{% endif %}
   {% endif %}
 </div>
 
@@ -37,8 +37,17 @@
 </form>
 {% endif %}
 
+{% if situacoes %}
+<p class="chips mb-2 small">Pronto para a catraca?
+  <a href="{{ url_for('pessoas.lista', tipo='aluno', turma_id=turma_id, q=termo or None) }}" class="situacao cinza {{ 'fw-bold' if not filtro_situacao }}">todos</a>
+  {% for chave, (classe, texto) in rotulos_situacao.items() %}{% if contagem.get(chave) %}
+  <a href="{{ url_for('pessoas.lista', tipo='aluno', situacao=chave, turma_id=turma_id, q=termo or None) }}" class="situacao {{ classe }} {{ 'fw-bold border border-dark-subtle' if filtro_situacao == chave }}">{{ contagem[chave] }} · {{ texto }}</a>
+  {% endif %}{% endfor %}
+</p>
+{% endif %}
+
 <table class="table table-sm bg-white align-middle">
-  <thead><tr><th></th><th>Nome</th>{% if not tipo or pendencia %}<th>Tipo</th>{% endif %}<th>{{ 'Turma' if tipo == 'aluno' else ('Cargo' if tipo == 'funcionario' else 'Turma / cargo') }}</th><th>Status</th><th>Foto</th>{% if tipo != 'aluno' and tipo != 'funcionario' %}<th>Telegram</th>{% endif %}</tr></thead>
+  <thead><tr><th></th><th>Nome</th>{% if not tipo or pendencia %}<th>Tipo</th>{% endif %}<th>{{ 'Turma' if tipo == 'aluno' else ('Cargo' if tipo == 'funcionario' else 'Turma / cargo') }}</th>{% if situacoes %}<th>Pronto para a catraca?</th><th>Avisos</th>{% else %}<th>Status</th><th>Foto</th>{% if tipo != 'aluno' and tipo != 'funcionario' %}<th>Telegram</th>{% endif %}{% endif %}</tr></thead>
   <tbody>
   {% for p in pessoas %}
     <tr>
@@ -46,9 +55,19 @@
       <td><a href="{{ url_for('pessoas.detalhe', pessoa_id=p.id) }}">{{ p.nome }}</a></td>
       {% if not tipo or pendencia %}<td>{{ rotulo_tipo.get(p.tipo, p.tipo) }}</td>{% endif %}
       <td>{{ p.turma_nome or p.cargo or '' }}</td>
+      {% set st = situacoes.get(p.id) %}
+      {% if situacoes %}
+      <td>{% if p.status != 'ativo' %}<span class="badge bg-secondary">{{ p.status }}</span>{% elif st %}
+        {% if st.chave in ('falta_foto', 'erro_catraca') %}<a class="situacao {{ st.classe }}" href="{{ url_for('pessoas.foto', pessoa_id=p.id) }}" title="{{ st.erro or '' }}">{{ st.texto }} →</a>
+        {% elif st.chave in ('falta_responsavel', 'responsavel_sem_foto') %}<a class="situacao {{ st.classe }}" href="{{ url_for('pessoas.detalhe', pessoa_id=p.id) }}">{{ st.texto }} →</a>
+        {% else %}<span class="situacao {{ st.classe }}">{{ '✔ ' if st.classe == 'pronto' }}{{ st.texto }}</span>{% endif %}
+      {% endif %}</td>
+      <td><small>{% if st and st.n_resp %}<span class="{{ 'text-success' if st.n_resp_telegram == st.n_resp else ('text-warning' if st.n_resp_telegram else 'text-danger') }}">Telegram {{ st.n_resp_telegram }}/{{ st.n_resp }}</span>{% elif st %}<span class="text-muted">sem responsável</span>{% endif %}</small></td>
+      {% else %}
       <td><span class="badge bg-{{ {'ativo':'success','bloqueado':'warning','desligado':'secondary'}[p.status] }}">{{ p.status }}</span></td>
       <td>{% if p.tem_foto %}<span class="text-success">✔ ok</span>{% elif p.tipo != 'visitante' %}<a class="text-danger" href="{{ url_for('pessoas.foto', pessoa_id=p.id) }}">sem foto — tirar</a>{% endif %}</td>
       {% if tipo != 'aluno' and tipo != 'funcionario' %}<td>{% if p.responsavel_id %}{% if p.telegram_chat_id %}<span class="text-success">✔ ativo</span>{% else %}<a class="text-warning" href="{{ url_for('notificacoes.ativar', responsavel_id=p.responsavel_id) }}">não ativado</a>{% endif %}{% endif %}</td>{% endif %}
+      {% endif %}
     </tr>
   {% else %}<tr><td colspan="7" class="text-muted">{% if pendencia %}Nenhuma pendência — tudo pronto.{% else %}Nenhum cadastro ainda.{% endif %}</td></tr>{% endfor %}
   </tbody>

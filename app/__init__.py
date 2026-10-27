@@ -3,7 +3,7 @@ from flask import Flask, g, redirect, session, url_for
 
 from . import db
 from .config import Config
-from .util import formatar_hora, formatar_data_hora
+from .util import formatar_data_hora, formatar_hora, formatar_telefone
 
 
 def _unidade_da_requisicao():
@@ -54,6 +54,7 @@ def create_app(config_object=None):
 
     app.jinja_env.filters["hora"] = formatar_hora
     app.jinja_env.filters["data_hora"] = formatar_data_hora
+    app.jinja_env.filters["telefone"] = formatar_telefone
 
     @app.route("/")
     def index():

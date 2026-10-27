@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block titulo %}Importar planilha — Nexosix Acesso{% endblock %}
+{% block conteudo %}
+<h3 class="mb-0">Importar planilha</h3>
+<p class="text-muted small">Cadastra de uma vez alunos, turmas e responsáveis. Depois só falta tirar as fotos e convidar os responsáveis.</p>
+
+<ol class="passos mb-4">
+  <li class="atual"><b>1. Enviar</b><span>a planilha da escola</span></li>
+  <li><b>2. Conferir</b><span>colunas e prévia</span></li>
+  <li><b>3. Importar</b><span>tudo de uma vez</span></li>
+</ol>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card"><div class="card-body">
+      <h6>Enviar a planilha</h6>
+      <p class="small mb-2">Serve a planilha do sistema da escola (ActiveSoft, Excel, Google Sheets) ou o nosso modelo. Formatos: <b>.xlsx</b> ou <b>.csv</b>. Nada é gravado antes de você conferir.</p>
+      <form method="post" enctype="multipart/form-data" class="d-flex gap-2">
+        <input class="form-control" type="file" name="arquivo" accept=".xlsx,.csv,.txt" required>
+        <button class="btn btn-primary text-nowrap">Enviar e conferir</button>
+      </form>
+    </div></div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card border-primary-subtle"><div class="card-body">
+      <h6>Ainda não tem a planilha?</h6>
+      <p class="small mb-2">Baixe o modelo e mande para a escola preencher: uma linha por aluno, com até 3 responsáveis (celular e e-mail). Tem aba de exemplo e de instruções.</p>
+      <a class="btn btn-outline-primary btn-sm" href="{{ url_for('pessoas.importar_modelo') }}">Baixar modelo (.xlsx)</a>
+    </div></div>
+  </div>
+</div>
+
+{% if anteriores %}
+<h6 class="mt-4">Importações anteriores</h6>
+<table class="table table-sm bg-white align-middle">
+  <thead><tr><th>Arquivo</th><th>Quando</th><th>Por</th><th>Situação</th><th></th></tr></thead>
+  <tbody>
+  {% for i in anteriores %}
+    <tr>
+      <td>{{ i.arquivo_nome }}</td>
+      <td>{{ (i.importado_em or i.criado_em)|data_hora(fuso) }}</td>
+      <td>{{ i.usuario_nome or '' }}</td>
+      <td>{% if i.status == 'importada' %}<span class="text-success">✔ importada</span> <small class="text-muted">{{ i.resultado.alunos_novos }} alunos, {{ i.resultado.responsaveis_novos }} responsáveis novos</small>{% else %}<span class="text-warning">não concluída</span>{% endif %}</td>
+      <td><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('pessoas.importar_conferir', importacao_id=i.id) }}">{{ 'ver' if i.status == 'importada' else 'continuar' }}</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

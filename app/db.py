@@ -75,10 +75,40 @@ def conexao():
 
 
 @contextmanager
+def lote():
+    """Tudo ou nada: dentro do `with db.lote():` toda query/execute/transacao (inclusive as
+    chamadas pelos services) usa a MESMA transação. Feito pra importação de planilha: 300
+    alunos gravados pela metade porque a linha 180 quebrou seria pior que não importar nada
+    — e uma conexão só é ~10x mais rápido que abrir uma por INSERT."""
+    if getattr(contexto, "cur", None) is not None:
+        yield contexto.cur
+        return
+    with transacao() as cur:
+        contexto.cur = cur
+        try:
+            yield cur
+        finally:
+            contexto.cur = None
+
+
+@contextmanager
 def transacao(outbox=None):
     """Cursor dentro de uma transação. Commit ao sair sem erro, rollback com erro.
     outbox=False desliga o espelho só nesta transação (escritas de controle que não devem
     viajar entre local e nuvem)."""
+    externo = getattr(contexto, "cur", None)
+    if externo is not None:  # dentro de db.lote(): reaproveita a transação de fora
+        if outbox is False:
+            externo.execute("SELECT current_setting('nexosix.outbox', true) AS v")
+            anterior = (externo.fetchone() or {}).get("v") or ""
+            externo.execute("SELECT set_config('nexosix.outbox', 'off', true)")
+            try:
+                yield externo
+            finally:
+                externo.execute("SELECT set_config('nexosix.outbox', %s, true)", (anterior,))
+        else:
+            yield externo
+        return
     with conexao() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         try:
@@ -101,6 +131,8 @@ def transacao(outbox=None):
 def _com_retry(fn):
     """Conexão do pool morta (banco reiniciou, SSL caiu) → descarta e tenta uma vez de novo.
     Sem isso a primeira requisição depois de um restart do banco dava 500."""
+    if getattr(contexto, "cur", None) is not None:  # dentro de lote(): repetir não adianta
+        return fn()
     try:
         return fn()
     except (psycopg2.OperationalError, psycopg2.InterfaceError):

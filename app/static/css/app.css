@@ -31,3 +31,19 @@
 #guia { position: absolute; top: 8%; left: 25%; width: 50%; height: 84%; border: 3px dashed rgba(255,255,255,.7); border-radius: 50%; pointer-events: none; }
 .foto-mini { width: 48px; height: 48px; object-fit: cover; border-radius: 50%; }
 @media print { .sidebar, .topo, .no-print { display: none !important; } body { background: #fff; } .conteudo { padding: 0; } }
+
+/* Passo a passo (importação, depois cadastro guiado): onde estou, o que falta */
+.passos { display: flex; gap: 8px; list-style: none; padding: 0; counter-reset: none; }
+.passos li { flex: 1; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; color: #64748b; }
+.passos li b { display: block; font-size: 14px; }
+.passos li span { font-size: 12px; }
+.passos li.atual { border-color: #2563eb; color: #1e293b; box-shadow: 0 0 0 2px #dbeafe; }
+.passos li.feito { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.passos li.feito b::before { content: "✔ "; }
+/* Pronto para a catraca? */
+.situacao { font-size: 12.5px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.situacao.pronto { background: #dcfce7; color: #166534; }
+.situacao.atencao { background: #fef3c7; color: #92400e; }
+.situacao.falta { background: #fee2e2; color: #991b1b; }
+.situacao.cinza { background: #f1f5f9; color: #475569; }
+.chips a { text-decoration: none; }

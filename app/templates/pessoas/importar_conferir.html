@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block titulo %}Conferir importação — Nexosix Acesso{% endblock %}
+{% macro coluna(nome, valor) -%}
+<select class="form-select form-select-sm" name="{{ nome }}">
+  <option value="">— não tem —</option>
+  {% for h in imp.cabecalho %}<option value="{{ loop.index0 }}" {{ 'selected' if valor == loop.index0 }}>{{ h }}{% if amostras[loop.index0] %} · ex.: {{ amostras[loop.index0][:22] }}{% endif %}</option>{% endfor %}
+</select>
+{%- endmacro %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-start">
+  <div><h3 class="mb-0">Conferir importação</h3><small class="text-muted">{{ imp.arquivo_nome }} · {{ imp.linhas|length }} linhas</small></div>
+  <form method="post" action="{{ url_for('pessoas.importar_descartar', importacao_id=imp.id) }}"><button class="btn btn-sm btn-outline-secondary">Descartar</button></form>
+</div>
+<ol class="passos my-3">
+  <li class="feito"><b>1. Enviar</b><span>{{ imp.arquivo_nome[:28] }}</span></li>
+  <li class="atual"><b>2. Conferir</b><span>colunas e prévia</span></li>
+  <li><b>3. Importar</b><span>tudo de uma vez</span></li>
+</ol>
+
+{% if faltando %}<div class="alert alert-danger py-2">Não achei a coluna de <b>{{ faltando|join(' e ') }}</b>. Escolha abaixo em “Colunas da planilha”.</div>{% endif %}
+
+<div class="row g-3 mb-3">
+  {% for n, rot, cor in [(r.alunos_novos, 'alunos novos', ''), (r.alunos_existentes, 'alunos já cadastrados', 'text-muted'), (r.responsaveis_novos, 'responsáveis novos', ''), (r.responsaveis_existentes, 'responsáveis já cadastrados', 'text-muted'), (r.vinculos_novos, 'vínculos aluno ↔ responsável', ''), (r.linhas_com_erro, 'linhas com problema', 'text-danger' if r.linhas_com_erro else 'text-muted')] %}
+  <div class="col-6 col-md-2"><div class="card text-center h-100"><div class="card-body py-2"><div class="fs-3 {{ cor }}">{{ n }}</div><small>{{ rot }}</small></div></div></div>
+  {% endfor %}
+</div>
+{% if r.turmas_novas %}<div class="alert alert-info py-2 small"><b>Turmas que serão criadas:</b> {{ r.turmas_novas|join(', ') }}. Depois confira horários e a regra de saída em Cadastro › Turmas.</div>{% endif %}
+{% if r.mudam_turma %}<div class="alert alert-warning py-2 small"><b>{{ r.mudam_turma }} aluno(s) mudam de turma</b> (mesma matrícula, turma diferente na planilha).</div>{% endif %}
+{% if r.sem_responsavel %}<div class="alert alert-warning py-2 small"><b>{{ r.sem_responsavel }} aluno(s) novo(s) sem nenhum responsável</b> na planilha: vão entrar, mas ninguém recebe aviso nem pode buscar até cadastrar um.</div>{% endif %}
+
+<div class="row g-3">
+  <div class="col-xl-8">
+    {% if plano.erros %}
+    <div class="card mb-3 border-danger-subtle"><div class="card-header text-danger">Linhas que não serão importadas ({{ plano.erros|length }}) — corrija na planilha e envie de novo, ou importe o resto agora</div>
+      <table class="table table-sm mb-0"><tbody>
+      {% for e in plano.erros[:50] %}<tr><td class="text-muted" style="width:90px">linha {{ e.linhas|join(', ') }}</td><td>{{ e.aluno or '—' }}</td><td class="text-danger">{{ e.erros|join('; ') }}</td></tr>{% endfor %}
+      {% if plano.erros|length > 50 %}<tr><td colspan="3" class="text-muted">… e mais {{ plano.erros|length - 50 }}</td></tr>{% endif %}
+      </tbody></table></div>
+    {% endif %}
+    {% if plano.avisos %}
+    <details class="card mb-3"><summary class="card-header">Avisos ({{ plano.avisos|length }}) — importa assim mesmo</summary>
+      <table class="table table-sm mb-0"><tbody>
+      {% for a in plano.avisos[:100] %}<tr><td class="text-muted" style="width:90px">linha {{ a.linhas|join(', ') }}</td><td>{{ a.aluno }}</td><td>{{ a.aviso }}</td></tr>{% endfor %}
+      </tbody></table></details>
+    {% endif %}
+    <div class="card"><div class="card-header">Prévia ({{ plano.itens|length }} alunos{% if plano.itens|length > 40 %}, mostrando 40{% endif %})</div>
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Linha</th><th>Aluno</th><th>Turma</th><th>Responsáveis</th></tr></thead>
+        <tbody>
+        {% for i in plano.itens[:40] %}
+          <tr>
+            <td class="text-muted">{{ i.linhas|join(', ') }}</td>
+            <td>{{ i.aluno_nome }} {% if i.aluno %}<span class="badge text-bg-light">já cadastrado</span>{% else %}<span class="badge text-bg-success">novo</span>{% endif %}{% if i.matricula %}<br><small class="text-muted">mat. {{ i.matricula }}</small>{% endif %}</td>
+            <td>{{ i.turma_nome }}{% if i.turma[0] == 'nova' %} <span class="badge text-bg-info">turma nova</span>{% endif %}{% if i.muda_turma %} <span class="badge text-bg-warning">muda de turma</span>{% endif %}</td>
+            <td><small>
+              {% for rr in i.responsaveis %}
+                <div>{{ rr.nome }}{% if rr.parentesco %} ({{ rr.parentesco }}){% endif %}{% if rr.telefone %} · {{ rr.telefone|telefone }}{% endif %}{% if rr.email %} · {{ rr.email }}{% endif %}
+                {% if rr.ref[0] == 'id' %}<span class="badge text-bg-light">já cadastrado</span>{% endif %}{% if not rr.vinculo_novo %}<span class="text-muted">· já vinculado</span>{% endif %}</div>
+              {% else %}<span class="text-warning">sem responsável</span>{% endfor %}
+            </small></td>
+          </tr>
+        {% else %}<tr><td colspan="4" class="text-muted">Nenhum aluno válido com este mapeamento.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="col-xl-4">
+    <div class="card mb-3 border-primary"><div class="card-body">
+      <h6>3. Importar</h6>
+      <form method="post" action="{{ url_for('pessoas.importar_confirmar', importacao_id=imp.id) }}" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Importando…'">
+        <div class="form-check small mb-2">
+          <input class="form-check-input" type="checkbox" name="consentimento" value="1" id="cons">
+          <label class="form-check-label" for="cons">A escola tem o <b>termo de consentimento (LGPD)</b> assinado pelos responsáveis destes alunos, na matrícula. Registrar para todos os cadastros novos.</label>
+        </div>
+        <p class="small text-muted mb-2">Sem marcar, cada ficha fica com o aviso “sem consentimento” até alguém registrar. A foto é dado biométrico.</p>
+        <button class="btn btn-primary w-100" {{ 'disabled' if faltando or not plano.itens }}>Importar {{ plano.itens|length }} alunos</button>
+      </form>
+    </div></div>
+
+    <div class="card"><div class="card-body">
+      <h6>Colunas da planilha</h6>
+      <p class="small text-muted">Adivinhei pelo nome das colunas. Confira e corrija se precisar.</p>
+      <form method="post" action="{{ url_for('pessoas.importar_mapear', importacao_id=imp.id) }}">
+        {% for c, rot, obrig in campos_aluno %}
+        <label class="form-label small mb-0 mt-1">{{ rot }}{% if obrig %} <span class="text-danger">*</span>{% endif %}</label>
+        {{ coluna('m_' ~ c, mapa[c]) }}
+        {% endfor %}
+        {% for slot in mapa.resp %}{% set s = loop.index0 %}
+        <details class="mt-2" {{ 'open' if slot.nome is not none }}>
+          <summary class="small fw-semibold">Responsável {{ s + 1 }}{% if slot.nome is not none %} · {{ imp.cabecalho[slot.nome] }}{% endif %}</summary>
+          {% for c, rot in campos_resp %}
+          <label class="form-label small mb-0 mt-1">{{ rot }}</label>
+          {{ coluna('m_r' ~ s ~ '_' ~ c, slot[c]) }}
+          {% endfor %}
+          <label class="form-label small mb-0 mt-1">Parentesco quando a coluna estiver vazia</label>
+          <input class="form-control form-control-sm" name="m_r{{ s }}_padrao" value="{{ slot.padrao }}" placeholder="ex.: mãe">
+        </details>
+        {% endfor %}
+        <button class="btn btn-outline-primary btn-sm w-100 mt-3">Aplicar colunas e atualizar a prévia</button>
+      </form>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

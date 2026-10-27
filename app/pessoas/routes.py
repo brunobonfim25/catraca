@@ -40,13 +40,23 @@ def lista():
     tipo = request.args.get("tipo") or None
     termo = request.args.get("q") or None
     turma_id = request.args.get("turma_id", type=int)
-    pessoas = service.buscar(un["id"], termo, tipo, turma_id, incluir_desligados=request.args.get("desligados") == "1")
+    pessoas = service.buscar(un["id"], termo, tipo, turma_id, incluir_desligados=request.args.get("desligados") == "1", limite=3000)
     pendencia = request.args.get("pendencia")
     if pendencia == "foto":
         pessoas = [p for p in pessoas if not p["tem_foto"] and p["tipo"] != "visitante"]
     elif pendencia == "telegram":
         pessoas = [p for p in pessoas if p["responsavel_id"] and not p["telegram_chat_id"]]
-    return render_template("pessoas/lista.html", pessoas=pessoas, tipo=tipo, termo=termo or "", turma_id=turma_id, turmas=_turmas(un["id"]), pendencia=pendencia)
+    situacoes, contagem, filtro = {}, {}, request.args.get("situacao")
+    if tipo == "aluno" and not pendencia:
+        situacoes = service.situacao_alunos(un["id"])
+        alunos = [p for p in pessoas if p["id"] in situacoes]
+        for p in alunos:
+            chave = situacoes[p["id"]]["chave"]
+            contagem[chave] = contagem.get(chave, 0) + 1
+        if filtro:
+            pessoas = [p for p in alunos if situacoes[p["id"]]["chave"] == filtro]
+    return render_template("pessoas/lista.html", pessoas=pessoas, tipo=tipo, termo=termo or "", turma_id=turma_id, turmas=_turmas(un["id"]),
+                           pendencia=pendencia, situacoes=situacoes, contagem=contagem, filtro_situacao=filtro, rotulos_situacao=service.SITUACOES)
 
 
 # ---------------------------------------------------------------- alunos
@@ -94,7 +104,7 @@ def responsavel_novo():
         if not f.get("nome"):
             flash("Nome é obrigatório", "danger")
         else:
-            pessoa_id, resp_id = service.criar_responsavel(un["id"], f["nome"], f.get("telefone"), f.get("documento"))
+            pessoa_id, resp_id = service.criar_responsavel(un["id"], f["nome"], f.get("telefone"), f.get("documento"), f.get("email"))
             if f.get("consentimento_por"):
                 service.registrar_consentimento(pessoa_id, f["consentimento_por"], date.today())
             if f.get("aluno_id"):
@@ -112,7 +122,7 @@ def responsavel_editar(pessoa_id):
         abort(404)
     if request.method == "POST":
         f = request.form
-        service.atualizar_responsavel(pessoa_id, f["nome"], f.get("telefone"), f.get("documento"))
+        service.atualizar_responsavel(pessoa_id, f["nome"], f.get("telefone"), f.get("documento"), f.get("email"))
         flash("Responsável atualizado", "success")
         return redirect(url_for("pessoas.detalhe", pessoa_id=pessoa_id))
     return render_template("pessoas/responsavel_form.html", p=p, aluno_id=None, dias=DIAS)
@@ -310,3 +320,7 @@ def foto_jpg(pessoa_id):
     if not jpeg:
         abort(404)
     return Response(jpeg, content_type="image/jpeg", headers={"Cache-Control": "private, max-age=60"})
+
+
+# rotas da importação de planilha ficam em arquivo próprio, no mesmo blueprint
+from . import importar_routes  # noqa: E402,F401

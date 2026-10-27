@@ -2,7 +2,7 @@
 
   unico → tudo: fila da catraca, coleta de logs, Telegram, LGPD (dev ou escola sem nuvem)
   local → agente da escola: puxa da nuvem, fila da catraca, coleta, sobe eventos, ping
-  nuvem → Telegram, LGPD, limpeza do outbox (a catraca é do agente)
+  nuvem → Telegram, convites por e-mail, LGPD, limpeza do outbox (a catraca é do agente)
 
 Sem Redis: tudo em tabela PostgreSQL com SKIP LOCKED.
 """
@@ -42,6 +42,12 @@ def rodada_nuvem(contadores):
     enviados, falhas = notify.enviar_pendentes()
     if enviados or falhas:
         log.info("telegram: %d enviados, %d falhas", enviados, falhas)
+    if _a_cada(contadores, "convites", 30):  # e-mail de convite: lote pequeno, a cota grátis é por dia
+        from app.notificacoes import convites
+
+        enviados, falhas = convites.enviar_pendentes()
+        if enviados or falhas:
+            log.info("convites por e-mail: %d enviados, %d falhas", enviados, falhas)
     if os.environ.get("MODO") == "nuvem" and _a_cada(contadores, "vigia", 30):
         from app.espelho import failover
 

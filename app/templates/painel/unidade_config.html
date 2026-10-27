@@ -24,6 +24,27 @@
   <p class="small mb-1">Divulgue no comunicado, no grupo das turmas ou num cartaz na recepção. O responsável toca, aperta <b>Iniciar</b> e <b>Compartilhar meu telefone</b>; o sistema ativa pelo número do cadastro.</p>
   <code>{{ link_escola }}</code> · <a href="{{ url_for('notificacoes.qr_escola', unidade_id=un.id) }}" target="_blank">QR Code para imprimir</a>
 </div></div>
+<div class="card col-lg-6 mt-4" id="convite"><div class="card-body">
+  <h6>Convite aos responsáveis (WhatsApp e e-mail)</h6>
+  <p class="small text-muted mb-2">O mesmo texto vai no WhatsApp e no e-mail, cada um com o link individual do responsável. Envio em Cadastro › Convites.
+    {% if not email_ok %}<br><span class="text-warning">E-mail ainda não configurado na nuvem: por enquanto só WhatsApp e link da escola.</span>{% endif %}</p>
+  <form method="post" action="{{ url_for('painel.unidade_convite', unidade_id=un.id) }}" enctype="multipart/form-data">
+    <label class="form-label small mb-0">Nome da escola nas mensagens</label>
+    <input class="form-control form-control-sm mb-2" name="nome_convite" value="{{ nome_convite }}" placeholder="ex.: Creche Escola Professor Pica Pau – Recreio">
+    <label class="form-label small mb-0">Texto do convite</label>
+    <textarea class="form-control form-control-sm mb-1" name="convite_texto" rows="11">{{ convite_texto }}</textarea>
+    <small class="text-muted d-block mb-2">Troca automática: <code>{responsavel}</code> primeiro nome · <code>{alunos}</code> nome dos alunos · <code>{escola}</code> · <code>{link}</code> link de ativação (obrigatório). Apague tudo para voltar ao texto padrão.</small>
+    <label class="form-label small mb-0">E-mail da secretaria (respostas ao convite chegam aqui)</label>
+    <input class="form-control form-control-sm mb-2" type="email" name="email_contato" value="{{ un.config.get('email_contato') or '' }}" placeholder="secretaria@escola.com.br">
+    <label class="form-label small mb-0">Logotipo no topo do e-mail (PNG ou JPG, até 300 KB)</label>
+    <div class="d-flex gap-2 align-items-center mb-2">
+      {% if tem_logo %}<img src="{{ url_for('notificacoes.logo_escola', unidade_id=un.id) }}" alt="logotipo" style="max-height:40px">{% endif %}
+      <input class="form-control form-control-sm" type="file" name="logo" accept="image/png,image/jpeg">
+      {% if tem_logo %}<label class="small text-nowrap"><input type="checkbox" name="remover_logo" value="1"> remover</label>{% endif %}
+    </div>
+    <button class="btn btn-sm btn-primary">Salvar convite</button>
+  </form>
+</div></div>
 {% if tem_permissao('gerir_dispositivos') %}
 <div class="card col-lg-6 mt-4"><div class="card-body">
   <h6>Servidor da escola</h6>

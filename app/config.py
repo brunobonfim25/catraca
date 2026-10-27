@@ -18,6 +18,10 @@ class Config:
     TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "")
     TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
     BASE_URL = os.environ.get("BASE_URL", "http://localhost:5000").rstrip("/")
+    # convite por e-mail (app/notificacoes/email.py): Brevo ou Resend + remetente verificado
+    BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+    RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+    EMAIL_REMETENTE = os.environ.get("EMAIL_REMETENTE", "")
     TZ_PADRAO = os.environ.get("TZ_PADRAO", "America/Sao_Paulo")
     CONTROLID_SIMULADOR = os.environ.get("CONTROLID_SIMULADOR", "0") == "1"
     # Tempo que um responsável fica "em espera" depois de se identificar no leitor de fora
@@ -47,6 +51,7 @@ class TestConfig(Config):
     SECRET_KEY = "teste"
     MONITOR_TOKEN = "tok-teste"
     TELEGRAM_WEBHOOK_SECRET = "seg-teste"
+    BREVO_API_KEY = RESEND_API_KEY = EMAIL_REMETENTE = ""
     MODO = "unico"
     NUVEM_URL = ""
     ESPELHO_TOKEN = ""

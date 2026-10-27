@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titulo %}Importação concluída — Nexosix Acesso{% endblock %}
+{% block conteudo %}
+<h3 class="mb-0">Importação concluída</h3>
+<small class="text-muted">{{ imp.arquivo_nome }} · {{ imp.importado_em|data_hora(fuso) }}</small>
+<ol class="passos my-3">
+  <li class="feito"><b>1. Enviar</b><span>{{ imp.arquivo_nome[:28] }}</span></li>
+  <li class="feito"><b>2. Conferir</b><span>colunas e prévia</span></li>
+  <li class="feito"><b>3. Importar</b><span>concluído</span></li>
+</ol>
+<div class="row g-3 mb-4">
+  {% for n, rot in [(r.alunos_novos, 'alunos novos'), (r.responsaveis_novos, 'responsáveis novos'), (r.vinculos_novos, 'vínculos criados'), ((r.turmas_novas or [])|length, 'turmas criadas'), (r.linhas_com_erro, 'linhas não importadas')] %}
+  <div class="col-6 col-md-2"><div class="card text-center"><div class="card-body py-2"><div class="fs-3">{{ n }}</div><small>{{ rot }}</small></div></div></div>
+  {% endfor %}
+</div>
+{% if not r.consentimento %}<div class="alert alert-warning py-2 small">O consentimento LGPD não foi registrado na importação: registre na ficha de cada pessoa antes de tirar a foto.</div>{% endif %}
+
+<h5>Próximos passos</h5>
+<div class="row g-3">
+  <div class="col-md-4"><div class="card h-100"><div class="card-body">
+    <h6>1. Tirar as fotos</h6>
+    <p class="small">{{ sem_foto }} pessoa(s) sem foto. Sem foto a catraca não reconhece.</p>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('pessoas.lista', pendencia='foto') }}">Ver quem falta</a>
+  </div></div></div>
+  <div class="col-md-4"><div class="card h-100"><div class="card-body">
+    <h6>2. Convidar os responsáveis</h6>
+    <p class="small">Mande o link de ativação do Telegram por WhatsApp ou e-mail, todos de uma vez.</p>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('notificacoes.convites') }}">Convidar</a>
+  </div></div></div>
+  <div class="col-md-4"><div class="card h-100"><div class="card-body">
+    <h6>3. Conferir as turmas</h6>
+    <p class="small">{% if r.turmas_novas %}Criadas: {{ r.turmas_novas|join(', ') }}. {% endif %}Confira horários de entrada/saída e se a saída exige responsável.</p>
+    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('painel.turmas') }}">Abrir turmas</a>
+  </div></div></div>
+</div>
+{% endblock %}

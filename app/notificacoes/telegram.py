@@ -82,12 +82,6 @@ def link_whatsapp(telefone, texto):
     return f"https://wa.me/55{digitos}?text={quote(texto)}"
 
 
-def mensagem_convite(nome_responsavel, nome_unidade, alunos, link):
-    quem = ", ".join(primeiro_nome(a) for a in alunos) or "seu filho(a)"
-    return (f"Olá, {primeiro_nome(nome_responsavel)}! A escola {nome_unidade} vai avisar pelo Telegram cada entrada e saída de {quem}. "
-            f"Para ativar: toque no link, depois em Iniciar.\n{link}")
-
-
 TECLADO_TELEFONE = {"keyboard": [[{"text": "📱 Compartilhar meu telefone", "request_contact": True}]], "resize_keyboard": True, "one_time_keyboard": True}
 TECLADO_REMOVER = {"remove_keyboard": True}
 
