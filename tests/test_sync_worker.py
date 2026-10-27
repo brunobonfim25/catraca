@@ -33,7 +33,8 @@ def test_catraca_fora_do_ar_agenda_retry(seed, simulador):
     ok, falhas = sync.processar_fila(limite=100)
     assert ok == 0 and falhas > 0
     item = db.query("SELECT * FROM fila_sync ORDER BY id LIMIT 1", one=True)
-    assert item["status"] == "pendente" and item["tentativas"] == 1 and item["proximo_em"] > item["criado_em"]
+    # catraca fora não gasta tentativa (C10): o item espera e volta, quantas vezes precisar
+    assert item["status"] == "pendente" and item["tentativas"] == 0 and item["proximo_em"] > item["criado_em"] and "sem resposta" in item["erro"]
 
 
 def test_bloquear_revoga_na_catraca_e_desligar_remove(sincronizado, simulador):

@@ -46,6 +46,12 @@ Coluna **Hardware** fica `pendente` até alguém rodar na catraca real e anotar 
 7. Tempo máximo de resposta do servidor no modo online. A doc não dá o número. O endpoint `/api/catraca/<token>/new_user_identified.fcgi` responde em uma consulta SQL; medir em campo.
 8. `destroy_objects users` já apaga a foto. Chamamos `user_destroy_image` antes por garantia.
 9. Comportamento do braço BQC na queda de energia **não** é exposto pela API — é mecânico. Nada no código mexe nisso.
+10. `load_objects access_logs` com `order: ["id","descending"]` + `limit: 1` devolve o **maior** id (usado pra detectar que a numeração recomeçou depois de reset). A doc mostra os dois sentidos de ordenação.
+11. Depois de **reset de fábrica** os ids de `users` e de `access_logs` recomeçam do 1. O sistema detecta (registro repetido com hora diferente, ou maior id abaixo do já coletado), abre uma época nova e **reconcilia** pela coluna `registration` (= id da pessoa no Nexosix). Testar: reset no equipamento → o painel mostra "Catraca resetada" e o cadastro volta sozinho.
+12. A catraca aceita **duas sessões** ao mesmo tempo (a fila e a coleta do agente rodam em paralelo, cada uma com o seu login).
+13. A catraca **repete** `new_user_identified` com o mesmo `uuid` quando a resposta demora (`online_client.max_request_attempts`); o servidor devolve a mesma resposta. Confirmar que o `uuid` é por identificação.
+14. Desistência (não girou): chega `access_logs` com `event 13` e/ou `catra_event` `EVENT_GIVE_UP`. Os dois desfazem a saída, reabrem a espera do responsável e mandam "Correção" aos pais. Confirmar qual dos dois o equipamento manda.
+15. Escala de funcionário: em Standalone a catraca libera a qualquer hora (regra 24 h); o painel só alerta. Se precisar travar, criar regra de horário por funcionário (`criar_regra_horario`).
 
 ## Primeiro dia com a catraca (roteiro)
 

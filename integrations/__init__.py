@@ -1,7 +1,7 @@
 """Fábrica de adaptadores: a partir da linha de `dispositivos` devolve quem fala com o hardware."""
 import os
 
-from .base_adapter import BaseAdapter, DispositivoErro, FotoRejeitada  # noqa: F401
+from .base_adapter import BaseAdapter, DispositivoErro, DispositivoInacessivel, FotoRejeitada  # noqa: F401
 
 
 def adaptador_para(dispositivo, simulador=None):
@@ -23,5 +23,7 @@ def adaptador_para(dispositivo, simulador=None):
             porta=porta,
             usuario=dispositivo.get("usuario_api") or "admin",
             senha=dispositivo.get("senha_api") or "admin",
+            # Revisão (C11): 8 s por chamada × 20 itens com a catraca fora travava a volta inteira
+            timeout=float(os.environ.get("CATRACA_TIMEOUT_SEG", "4")),
         )
     raise DispositivoErro(f"fabricante sem adaptador: {fabricante}")

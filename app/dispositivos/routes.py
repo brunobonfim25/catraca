@@ -127,6 +127,17 @@ def modo(dispositivo_id):
     return redirect(url_for("dispositivos.detalhe", dispositivo_id=dispositivo_id))
 
 
+@bp.post("/<int:dispositivo_id>/reconciliar")
+@exige("gerir_dispositivos")
+def reconciliar(dispositivo_id):
+    """Depois de reset ou troca da catraca: confere quem é quem nela e reenvia o que faltar."""
+    _disp(dispositivo_id)
+    service.enfileirar(dispositivo_id, "reconciliar")
+    auditar("reconciliar", "dispositivo", dispositivo_id)
+    flash("Reconciliação enfileirada: o servidor da escola confere o cadastro da catraca e reenvia o que faltar.", "info")
+    return redirect(url_for("dispositivos.detalhe", dispositivo_id=dispositivo_id))
+
+
 @bp.post("/<int:dispositivo_id>/hora")
 @exige("gerir_dispositivos")
 def acertar_hora(dispositivo_id):
@@ -166,5 +177,7 @@ def leitores(dispositivo_id):
             db.execute("INSERT INTO dispositivo_leitores (dispositivo_id, component_id, portal_id, sentido, descricao) VALUES (%s,%s,%s,%s,%s)",
                        (dispositivo_id, comp, int(portal) if portal else None, sentido, f.get(f"descricao_{i}")))
     auditar("leitores", "dispositivo", dispositivo_id)
-    flash("Mapeamento de leitores salvo", "success")
+    # A regra de contingência usa os portais de entrada: mudou o mapeamento, reenvia as regras (C6)
+    n = service.enfileirar_regras(dispositivo_id=dispositivo_id)
+    flash(f"Mapeamento de leitores salvo; regras de {n} pessoa(s) reenviadas à catraca", "success")
     return redirect(url_for("dispositivos.detalhe", dispositivo_id=dispositivo_id))

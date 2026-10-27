@@ -23,12 +23,14 @@ JANELA_ACOMPANHADO_SEG = 60
 
 def registrar(unidade_id, tipo, ocorrido_em, dispositivo_id=None, pessoa_id=None, sentido=None, origem="dispositivo",
               log_id=None, evento_dispositivo=None, correlacao_id=None, autorizado_por=None, justificativa=None, detalhes=None):
-    """Grava o evento. Devolve a linha, ou None se (dispositivo, log_id) já existia (dedupe)."""
+    """Grava o evento. Devolve a linha, ou None se (dispositivo, época, log_id) já existia (dedupe).
+    A época é a atual da catraca (muda quando ela reseta e recomeça a numeração)."""
     return db.execute(
-        "INSERT INTO eventos (unidade_id, dispositivo_id, pessoa_id, tipo, sentido, ocorrido_em, origem, log_id_dispositivo, "
-        "evento_dispositivo, correlacao_id, autorizado_por, justificativa, detalhes) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-        "ON CONFLICT (dispositivo_id, log_id_dispositivo) WHERE log_id_dispositivo IS NOT NULL DO NOTHING RETURNING *",
-        (unidade_id, dispositivo_id, pessoa_id, tipo, sentido, ocorrido_em, origem, log_id, evento_dispositivo,
+        "INSERT INTO eventos (unidade_id, dispositivo_id, pessoa_id, tipo, sentido, ocorrido_em, origem, log_id_dispositivo, log_epoca, "
+        "evento_dispositivo, correlacao_id, autorizado_por, justificativa, detalhes) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,"
+        "COALESCE((SELECT log_epoca FROM dispositivos WHERE id = %s), 0),%s,%s,%s,%s,%s) "
+        "ON CONFLICT (dispositivo_id, log_epoca, log_id_dispositivo) WHERE log_id_dispositivo IS NOT NULL DO NOTHING RETURNING *",
+        (unidade_id, dispositivo_id, pessoa_id, tipo, sentido, ocorrido_em, origem, log_id, dispositivo_id, evento_dispositivo,
          correlacao_id, autorizado_por, justificativa, json.dumps(detalhes or {})),
         returning=True,
     )
@@ -209,23 +211,45 @@ def _evento_pro_sem_log(dispositivo_id, pessoa_id, ocorrido_em, codigo):
     )
 
 
+# Mesmo número de registro com hora diferente disso = não é o mesmo registro: a catraca resetou
+RESET_DIFERENCA = timedelta(minutes=2)
+
+
+def nova_epoca(dispositivo, motivo):
+    """A catraca recomeçou a numeração dos registros (reset, troca do equipamento)."""
+    linha = db.execute("UPDATE dispositivos SET log_epoca = log_epoca + 1, ultimo_log_id = 0, coleta_log_id = 0 WHERE id = %s RETURNING log_epoca",
+                       (dispositivo["id"],), returning=True)
+    dispositivo.update({"log_epoca": linha["log_epoca"], "ultimo_log_id": 0, "coleta_log_id": 0})
+    registrar(dispositivo["unidade_id"], tipos.DISPOSITIVO_RESET, agora_utc(), dispositivo_id=dispositivo["id"], origem="sistema",
+              detalhes={"motivo": motivo, "epoca": linha["log_epoca"], "alerta": "catraca resetada: cadastro sendo conferido"})
+    # Depois de reset os números dos usuários na catraca também mudaram (C4)
+    dispositivos.enfileirar(dispositivo["id"], "reconciliar")
+    log.warning("catraca %s recomeçou a numeração (%s): época %s", dispositivo["id"], motivo, linha["log_epoca"])
+
+
 def processar_access_log(dispositivo, item):
     """item = linha de access_logs da Control iD (id, time, event, user_id, portal_id…).
     Idempotente: o mesmo log pelo Monitor e pela coleta vira um evento só."""
     log_id = int(item["id"])
-    ja = db.query("SELECT id FROM eventos WHERE dispositivo_id = %s AND log_id_dispositivo = %s", (dispositivo["id"], log_id), one=True)
-    if ja:
-        return None
     codigo = int(item.get("event") or 0)
     user_id = int(item.get("user_id") or 0)
     ocorrido = de_unix(item["time"]) if item.get("time") else agora_utc()
+    epoca = int(dispositivo.get("log_epoca") or 0)
+    ja = db.query("SELECT id, ocorrido_em FROM eventos WHERE dispositivo_id = %s AND log_epoca = %s AND log_id_dispositivo = %s",
+                  (dispositivo["id"], epoca, log_id), one=True)
+    if ja:
+        # Revisão (C5): depois de um reset o número 1, 2, 3… volta, e tudo era descartado como
+        # repetido. Mesmo número com hora bem diferente (e mais nova) é registro novo.
+        if not item.get("time") or abs(ocorrido - ja["ocorrido_em"]) <= RESET_DIFERENCA or ocorrido < ja["ocorrido_em"]:
+            return None
+        nova_epoca(dispositivo, f"registro {log_id} repetido com outra hora")
     unidade = _unidade(dispositivo["unidade_id"])
     sentido = dispositivos.sentido_do_leitor(dispositivo, portal_id=item.get("portal_id"))
     pessoa = pessoa_por_user_id(dispositivo["id"], user_id)
 
     pendente = _evento_pro_sem_log(dispositivo["id"], pessoa["id"] if pessoa else None, ocorrido, codigo) if codigo in (6, 7) else None
     if pendente:
-        db.execute("UPDATE eventos SET log_id_dispositivo = %s WHERE id = %s", (log_id, pendente["id"]))
+        db.execute("UPDATE eventos SET log_id_dispositivo = %s, log_epoca = %s WHERE id = %s", (log_id, int(dispositivo.get("log_epoca") or 0), pendente["id"]))
         _avancar_ultimo_log(dispositivo, log_id)
         return db.query("SELECT * FROM eventos WHERE id = %s", (pendente["id"],), one=True)
 
@@ -241,9 +265,8 @@ def processar_access_log(dispositivo, item):
             _avisar_negada(pessoa, evento, unidade, ocorrido)
     elif codigo == 13:
         evento = registrar(unidade["id"], tipos.DESISTENCIA, ocorrido, **base)
-        # Liberou e não girou: desfaz a presença que o evento 7 tinha marcado
         if evento and pessoa and sentido:
-            atualizar_presenca(pessoa["id"], unidade["id"], sentido != "entrada", evento["id"], ocorrido)
+            desistencia(unidade, dispositivo, pessoa, sentido, ocorrido, evento)
     else:
         tipo = TIPO_POR_CODIGO.get(codigo, f"DISPOSITIVO_EVENTO_{codigo}")
         evento = registrar(unidade["id"], tipo, ocorrido, **base)
@@ -253,6 +276,30 @@ def processar_access_log(dispositivo, item):
 
 def _avancar_ultimo_log(dispositivo, log_id):
     db.execute("UPDATE dispositivos SET ultimo_log_id = GREATEST(ultimo_log_id, %s) WHERE id = %s", (log_id, dispositivo["id"]))
+
+
+def desistencia(unidade, dispositivo, pessoa, sentido, quando, evento=None):
+    """Liberou e a pessoa não girou. Revisão (C9): a espera já tinha sido consumida e o "saiu"
+    enviado; na segunda tentativa a criança era negada e os pais recebiam "tentou sair".
+    Agora: presença volta, a espera reabre e os pais recebem a correção."""
+    decisao = db.query(
+        "SELECT * FROM eventos WHERE dispositivo_id = %s AND pessoa_id = %s AND sentido = %s AND evento_dispositivo = 7 "
+        "AND ocorrido_em BETWEEN %s AND %s AND NOT (detalhes ? 'desistiu') ORDER BY ocorrido_em DESC, id DESC LIMIT 1",
+        (dispositivo["id"], pessoa["id"], sentido, quando - timedelta(minutes=2), quando + timedelta(seconds=30)), one=True,
+    )
+    atualizar_presenca(pessoa["id"], unidade["id"], sentido != "entrada", evento["id"] if evento else (decisao and decisao["id"]), quando)
+    if not decisao:
+        return
+    db.execute("UPDATE eventos SET detalhes = detalhes || '{\"desistiu\": true}' WHERE id = %s", (decisao["id"],))
+    espera_id = (decisao.get("detalhes") or {}).get("espera_id")
+    if espera_id:
+        db.execute("UPDATE responsavel_em_espera SET consumido_em = NULL WHERE id = %s AND expira_em > %s", (espera_id, quando))
+    turma = _turma_do_aluno(pessoa["id"]) if pessoa["tipo"] == "aluno" else None
+    if turma and decisao["tipo"] in tipos.AVISA_SAIDA_ENTRADA:
+        hora = para_local(decisao["ocorrido_em"], unidade["fuso"]).strftime("%H:%M")
+        acao = "saiu" if sentido == "saida" else "entrou"
+        texto = f"Correção: {primeiro_nome(pessoa['nome'])} não {acao} às {hora} — desistiu na catraca e continua {'na escola' if sentido == 'saida' else 'fora'}."
+        notificar_responsaveis(pessoa, texto, evento["id"] if evento else decisao["id"], unidade["id"])
 
 
 def _processar_liberado(unidade, dispositivo, pessoa, sentido, ocorrido, base):
@@ -269,6 +316,13 @@ def _processar_liberado(unidade, dispositivo, pessoa, sentido, ocorrido, base):
         return registrar(unidade["id"], tipos.SAIDA, ocorrido, **base)
 
     turma = _turma_do_aluno(pessoa["id"]) if pessoa["tipo"] == "aluno" else None
+    if sentido == "entrada" and pessoa["tipo"] == "funcionario":
+        # Revisão (C14): em Standalone a catraca deixa o funcionário entrar a qualquer hora (a
+        # escala só valia no modo Pro). Não dá pra travar sem regra de horário na catraca, mas
+        # fica o alerta no painel.
+        d = acesso.decidir(pessoa["id"], "entrada", unidade, ocorrido)
+        if not d.liberar:
+            base["detalhes"]["alerta"] = f"entrada liberada pela catraca: {d.motivo}"
     if sentido == "entrada":
         tipo = regras.classificar_entrada(turma, local) if turma else tipos.ENTRADA
         acompanhado = _responsavel_acompanhando(unidade["id"], dispositivo["id"], pessoa, ocorrido) if turma else None
@@ -298,6 +352,8 @@ def _processar_liberado(unidade, dispositivo, pessoa, sentido, ocorrido, base):
             detalhes_extra = {"alerta": f"saída liberada pela catraca: {decisao.motivo}"}
     base["correlacao_id"] = correlacao
     base["detalhes"].update(detalhes_extra)
+    if decisao and decisao.liberar and decisao.espera_id:
+        base["detalhes"]["espera_id"] = decisao.espera_id
     evento = registrar(unidade["id"], tipo, ocorrido, **base)
     if evento:
         atualizar_presenca(pessoa["id"], unidade["id"], False, evento["id"], ocorrido)
@@ -342,6 +398,21 @@ def hora_da_decisao(time_catraca):
 def decidir_online(dispositivo, campos):
     """Catraca em modo Pro identificou alguém e pergunta se libera.
     Devolve (resposta_para_catraca, evento). Formato [DOC]: {"result": {event, user_id, user_name, actions[], message}}."""
+    uuid = str(campos.get("uuid") or "")[:80] or None
+    if uuid:
+        # Revisão (C9): a catraca repete o pedido (mesmo uuid) quando a resposta demora. Decidir
+        # de novo consumia a espera duas vezes: a 2ª negava e os pais recebiam "tentou sair".
+        anterior = db.query("SELECT * FROM eventos WHERE dispositivo_id = %s AND detalhes->>'uuid' = %s AND criado_em > now() - interval '10 minutes' "
+                            "ORDER BY id DESC LIMIT 1", (dispositivo["id"], uuid), one=True)
+        if anterior and (anterior.get("detalhes") or {}).get("resposta"):
+            return anterior["detalhes"]["resposta"], anterior
+    resposta, ev = _decidir_online(dispositivo, campos, uuid)
+    if ev:
+        db.execute("UPDATE eventos SET detalhes = detalhes || %s WHERE id = %s", (json.dumps({"resposta": resposta}), ev["id"]))
+    return resposta, ev
+
+
+def _decidir_online(dispositivo, campos, uuid):
     unidade = _unidade(dispositivo["unidade_id"])
     user_id = int(campos.get("user_id") or 0)
     ocorrido, diferenca = hora_da_decisao(campos.get("time"))
@@ -350,6 +421,8 @@ def decidir_online(dispositivo, campos):
     cfg = dispositivo.get("config") or {}
     allow = {"entrada": cfg.get("allow_entrada", "clockwise"), "saida": cfg.get("allow_saida", "anticlockwise")}.get(sentido)
     detalhes = {"user_id": user_id, "component_id": campos.get("component_id"), "portal_id": campos.get("portal_id"), "modo": "pro"}
+    if uuid:
+        detalhes["uuid"] = uuid
     if diferenca is not None:
         detalhes["alerta"] = f"relógio da catraca com {diferenca} min de diferença: decidido pela hora do servidor"
 
@@ -368,6 +441,8 @@ def decidir_online(dispositivo, campos):
         if pessoa["status"] != "ativo":
             return negar(tipos.ACESSO_NEGADO, f"responsável {pessoa['status']}", "Procure a recepção")
         espera, ev = registrar_espera(unidade, pessoa, dispositivo, ocorrido, evento_dispositivo=7)
+        if uuid and ev:
+            db.execute("UPDATE eventos SET detalhes = detalhes || %s WHERE id = %s", (json.dumps({"uuid": uuid}), ev["id"]))
         alunos = ", ".join(primeiro_nome(a) for a in (ev["detalhes"].get("alunos") or [])) or "aluno"
         modo = (unidade.get("config") or {}).get("responsavel_resposta", "aguardar")
         # [SUP] event 7 sem actions = tela verde sem girar; ver README do adaptador, item 6
@@ -394,7 +469,8 @@ def decidir_online(dispositivo, campos):
                      (turma["aluno_id"], decisao.responsavel_id), one=True)
         correlacao, retirado_por, parentesco = r["id"], r["nome"], r["parentesco"]
     ev = registrar(unidade["id"], decisao.tipo, ocorrido, dispositivo_id=dispositivo["id"], pessoa_id=pessoa["id"], sentido=sentido,
-                   evento_dispositivo=7, correlacao_id=correlacao, detalhes={**detalhes, "motivo": decisao.motivo})
+                   evento_dispositivo=7, correlacao_id=correlacao,
+                   detalhes={**detalhes, "motivo": decisao.motivo, **({"espera_id": decisao.espera_id} if decisao.espera_id else {})})
     if ev:
         atualizar_presenca(pessoa["id"], unidade["id"], sentido == "entrada", ev["id"], ocorrido)
         if decisao.espera_id and turma:
@@ -464,9 +540,17 @@ def processar_catra_event(dispositivo, payload):
     """[DOC] confirmação de giro (TURN_LEFT/TURN_RIGHT) ou desistência (GIVE_UP) de um access_event_id."""
     ev = payload.get("event") or {}
     aid = payload.get("access_event_id")
-    if aid:
-        db.execute("UPDATE eventos SET detalhes = detalhes || %s WHERE dispositivo_id = %s AND log_id_dispositivo = %s",
-                   (json.dumps({"giro": ev.get("name")}), dispositivo["id"], int(aid)))
+    if not aid:
+        return
+    epoca = int(dispositivo.get("log_epoca") or 0)
+    db.execute("UPDATE eventos SET detalhes = detalhes || %s WHERE dispositivo_id = %s AND log_epoca = %s AND log_id_dispositivo = %s",
+               (json.dumps({"giro": ev.get("name")}), dispositivo["id"], epoca, int(aid)))
+    if "GIVE" in str(ev.get("name") or "").upper():
+        alvo = db.query("SELECT * FROM eventos WHERE dispositivo_id = %s AND log_epoca = %s AND log_id_dispositivo = %s",
+                        (dispositivo["id"], epoca, int(aid)), one=True)
+        if alvo and alvo["pessoa_id"] and alvo["sentido"] and not (alvo.get("detalhes") or {}).get("desistiu"):
+            pessoa = db.query("SELECT * FROM pessoas WHERE id = %s", (alvo["pessoa_id"],), one=True)
+            desistencia(_unidade(dispositivo["unidade_id"]), dispositivo, pessoa, alvo["sentido"], alvo["ocorrido_em"])
 
 
 def processar_operation_mode(dispositivo, payload):

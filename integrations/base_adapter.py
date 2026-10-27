@@ -10,6 +10,12 @@ class DispositivoErro(Exception):
     """Falha de comunicação ou resposta inesperada do equipamento."""
 
 
+class DispositivoInacessivel(DispositivoErro):
+    """A catraca não respondeu (desligada, fora da rede). Não é erro do item: não gasta
+    tentativa. Revisão (C10): catraca desligada no fim de semana esgotava as 8 tentativas do
+    bloqueio e da remoção do desligado, que nunca mais iam pra catraca."""
+
+
 class FotoRejeitada(DispositivoErro):
     """O equipamento recusou a foto (sem rosto, desfocada, já cadastrada…).
     `erros` é a lista [{code, message}] do fabricante; `scores` as métricas, quando vierem."""

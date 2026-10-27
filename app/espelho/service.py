@@ -49,7 +49,7 @@ TABELAS = {
 
 # Colunas que só o agente atualiza (status da catraca). Quando a nuvem manda a linha de
 # dispositivos (editou IP, modo…), essas colunas NÃO sobrescrevem o que o agente sabe.
-COLUNAS_DO_AGENTE = {"dispositivos": {"status", "ultimo_contato", "ultimo_log_id", "firmware", "serial", "device_id_fabricante"}}
+COLUNAS_DO_AGENTE = {"dispositivos": {"status", "ultimo_contato", "ultimo_log_id", "coleta_log_id", "log_epoca", "firmware", "serial", "device_id_fabricante"}}
 # Chaves de dispositivos.config que o agente escreve (regras criadas na catraca, logs pendentes)
 CONFIG_DO_AGENTE = {"logs_no_dispositivo", "regra_liberado_id", "regra_so_entrada_id"}
 

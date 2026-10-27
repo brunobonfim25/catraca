@@ -363,6 +363,11 @@ def turma_salvar(turma_id=None):
             abort(404)
         db.execute("UPDATE turmas SET nome=%s, turno=%s, exige_responsavel_saida=%s, tolerancia_entrada_min=%s, entrada_inicio=%s, entrada_fim=%s, saida_inicio=%s, saida_fim=%s, ativo=%s WHERE id = %s", campos + (turma_id,))
         auditar("editar", "turma", turma_id, antes={k: str(v) for k, v in t.items() if k != "id"}, depois={"nome": campos[0], "exige_responsavel_saida": campos[2]})
+        if bool(t["exige_responsavel_saida"]) != campos[2]:
+            from ..dispositivos import service as dispositivos
+
+            n = dispositivos.enfileirar_regras(turma_id=turma_id)
+            flash(f"Regras de {n} aluno(s) reenviadas à catraca", "info")
     else:
         row = db.execute("INSERT INTO turmas (unidade_id, nome, turno, exige_responsavel_saida, tolerancia_entrada_min, entrada_inicio, entrada_fim, saida_inicio, saida_fim, ativo) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id", (un["id"],) + campos, returning=True)
         auditar("criar", "turma", row["id"], depois={"nome": campos[0]})

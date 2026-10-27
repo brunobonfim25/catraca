@@ -26,7 +26,7 @@
     <div class="card mt-3"><div class="card-header">Sincronização com as catracas</div>
       <ul class="list-group list-group-flush">
       {% for s in sync %}<li class="list-group-item d-flex justify-content-between"><span>{{ s.dispositivo_nome }} <small class="status-{{ s.dispositivo_status }}">●</small></span>
-        <span>foto: <b class="text-{{ {'sincronizado':'success','pendente':'warning','erro':'danger','nao_aplicavel':'muted'}[s.foto_sync_status] }}">{{ s.foto_sync_status }}</b> · regras: <b>{{ s.regras_sync_status }}</b>{% if s.erro %}<br><small class="text-danger">{{ s.erro }}</small>{% endif %}</span></li>
+        <span>foto: <b class="text-{{ {'sincronizado':'success','pendente':'warning','erro':'danger','nao_aplicavel':'muted'}[s.foto_sync_status] }}">{{ s.foto_sync_status }}</b> · regras: <b>{{ s.regras_sync_status }}</b>{% if s.erro %}<br><small class="text-danger">{{ s.erro }}</small>{% endif %}{% if s.fila_aberta %}<br><small class="text-warning">na fila: {{ s.fila_aberta }}</small>{% endif %}</span></li>
       {% else %}<li class="list-group-item text-muted">{{ 'visitante não vai pra catraca' if p.tipo == 'visitante' else 'nenhuma catraca cadastrada' }}</li>{% endfor %}
       </ul>
     </div>

@@ -90,9 +90,70 @@ def rodada_agente(adaptadores, contadores):
         log.info("agente → nuvem: %d linhas", n)
 
 
+def acertar_relogios():
+    """Revisão (C12): ninguém acertava a hora da catraca; relógio adiantado errava atraso,
+    hora do aviso e validade da espera. Uma vez por dia (e ao ligar) o agente acerta todas —
+    desde que o próprio PC esteja certo (o set_clock confere o desvio com a nuvem)."""
+    from app.dispositivos import service as dispositivos
+
+    for d in db.query("SELECT d.id, u.fuso FROM dispositivos d JOIN unidades u ON u.id = d.unidade_id WHERE d.ativo"):
+        dispositivos.enfileirar(d["id"], "set_clock", payload={"fuso": d["fuso"]})
+
+
+def _laco(nome, intervalo, fn, unidade_id):
+    """Uma tarefa do agente numa thread própria. Revisão (C11): era uma volta só e em série —
+    900 fotos ou uma catraca em timeout atrasavam bloqueio e liberação feitos no painel em
+    minutos. Agora a fila da catraca, a coleta e a sincronização com a nuvem andam separadas."""
+    import threading
+
+    def _rodar():
+        db.contexto.unidade_id = unidade_id  # contexto é por thread: sem isso o outbox sai sem escola
+        while True:
+            _etapa(nome, fn)
+            time.sleep(intervalo)
+
+    t = threading.Thread(target=_rodar, name=nome, daemon=True)
+    t.start()
+    return t
+
+
+def iniciar_agente(unidade_id):
+    fila_adapt, coleta_adapt, contadores = {}, {}, {}
+
+    def espelho_():
+        carregado = _etapa("carga inicial", espelho.garantir_carga_inicial)
+        if carregado is True:
+            n = _etapa("puxar", espelho.puxar)
+            if n and n is not FALHOU:
+                log.info("nuvem → agente: %d linhas", n)
+        n = _etapa("empurrar", espelho.empurrar)
+        if n and n is not FALHOU:
+            log.info("agente → nuvem: %d linhas", n)
+
+    def fila_():
+        ok, falhas = sync.processar_fila(limite=10, adaptadores=fila_adapt)
+        if ok or falhas:
+            log.info("sync: %d ok, %d falhas", ok, falhas)
+
+    def coleta_():
+        if _a_cada(contadores, "relogio", 86400):
+            acertar_relogios()
+        n = collect.coletar_todos(coleta_adapt)
+        if n:
+            log.info("coleta: %d logs novos", n)
+        collect.verificar_status()
+
+    espelho.iniciar_ping()
+    return [
+        _laco("espelho", int(os.environ.get("WORKER_INTERVALO_SEG", "3")), espelho_, unidade_id),
+        _laco("fila", 1, fila_, unidade_id),
+        _laco("coleta", int(os.environ.get("WORKER_COLETA_SEG", "30")), coleta_, unidade_id),
+    ]
+
+
 def main():
     modo = os.environ.get("MODO", "unico")
-    db.init(os.environ["DATABASE_URL"], 1, 4)
+    db.init(os.environ["DATABASE_URL"], 1, 8 if modo == "local" else 4)
     db.gucs = {"nexosix.outbox": "on"} if modo in ("nuvem", "local") else {}
     # Marca de escola nas escritas do worker (o site faz isso pela sessão). Sem ela a exclusão
     # LGPD das fotos saía da nuvem sem escola e o PC da escola nunca apagava a foto.
@@ -103,7 +164,11 @@ def main():
     adaptadores, contadores = {}, {}
     log.info("worker iniciado em MODO=%s (intervalo %ss)", modo, intervalo)
     if modo == "local":
-        espelho.iniciar_ping()
+        threads = iniciar_agente(db.contexto.unidade_id)
+        while all(t.is_alive() for t in threads):
+            time.sleep(10)
+        log.error("uma tarefa do agente parou; saindo pro serviço (NSSM/systemd) reiniciar")
+        raise SystemExit(1)
     while True:
         try:
             if modo == "nuvem":

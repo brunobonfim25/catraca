@@ -19,10 +19,13 @@ DISPOSITIVO_OFFLINE = "DISPOSITIVO_OFFLINE"
 DISPOSITIVO_CONTINGENCIA = "DISPOSITIVO_CONTINGENCIA"
 FAILOVER_NUVEM = "FAILOVER_NUVEM"       # nuvem assumiu a unidade
 FAILOVER_FIM = "FAILOVER_FIM"           # servidor local voltou e reassumiu
+DISPOSITIVO_RESET = "DISPOSITIVO_RESET"  # catraca recomeçou a numeração (reset/troca)
 
 ENTRADAS = {ENTRADA, ENTRADA_ATRASADA}
 SAIDAS = {SAIDA, SAIDA_ALUNO, SAIDA_AUTONOMA, SAIDA_ANTECIPADA}
 NEGADOS = {SAIDA_NEGADA, ACESSO_NEGADO, NAO_IDENTIFICADO}
+# Tipos que avisaram os pais e precisam de correção se a pessoa desistir na catraca
+AVISA_SAIDA_ENTRADA = ENTRADAS | SAIDAS
 
 ROTULOS = {
     ENTRADA: "Entrada",
@@ -43,4 +46,5 @@ ROTULOS = {
     DISPOSITIVO_CONTINGENCIA: "Catraca em contingência",
     FAILOVER_NUVEM: "Nuvem assumiu (servidor local parou)",
     FAILOVER_FIM: "Servidor local reassumiu",
+    DISPOSITIVO_RESET: "Catraca resetada (cadastro conferido)",
 }

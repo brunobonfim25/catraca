@@ -66,9 +66,13 @@ def decidir(pessoa_id, sentido, unidade, quando=None):
         esperas = esperas_ativas(unidade["id"], quando or agora_utc())
         # Espera anterior à entrada do aluno não vale: era a mãe DEIXANDO a criança de manhã.
         # Sem isso a Maria saía sozinha às 7:05 "com a mãe", que já tinha ido embora.
+        # Vale a hora da ENTRADA (não a da presença: uma desistência na catraca muda a presença
+        # e anulava a espera da mãe que estava ali esperando).
         pr = db.query("SELECT dentro, desde FROM presenca WHERE pessoa_id = %s", (pessoa_id,), one=True)
         if pr and pr["dentro"]:
-            esperas = [e for e in esperas if e["identificado_em"] >= pr["desde"]]
+            entrou = db.query("SELECT max(ocorrido_em) AS em FROM eventos WHERE pessoa_id = %s AND tipo = ANY(%s) AND ocorrido_em <= %s "
+                              "AND NOT (detalhes ? 'desistiu')", (pessoa_id, list(tipos.ENTRADAS), quando or agora_utc()), one=True)["em"] or pr["desde"]
+            esperas = [e for e in esperas if e["identificado_em"] >= entrou]
         avisos = avisos_do_dia(ctx["aluno"]["id"], agora_local.date())
         return regras.decidir_saida_aluno(ctx["aluno"], ctx["turma"], vinculos, esperas, avisos, agora_local)
     return regras.Decisao(True, tipos.SAIDA)

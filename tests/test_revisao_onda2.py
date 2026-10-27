@@ -86,7 +86,7 @@ def test_e6_ping_mede_o_relogio_e_o_site(seed, monkeypatch):
     monkeypatch.setenv("NUVEM_URL", "https://n")
     monkeypatch.setenv("ESPELHO_TOKEN", "t")
     wespelho.ping()
-    assert enviados[0]["web_ok"] is False and enviados[0]["schema"].startswith("009")
+    assert enviados[0]["web_ok"] is False and enviados[0]["schema"] == service.versao_schema()
     assert 290 <= db.query("SELECT desvio_relogio_seg FROM espelho_estado", one=True)["desvio_relogio_seg"] <= 300
 
 

@@ -10,7 +10,7 @@
         <dt class="col-5">device_id (Control iD)</dt><dd class="col-7">{{ d.device_id_fabricante or '— (clique em Testar conexão)' }}</dd>
         <dt class="col-5">Modo</dt><dd class="col-7">{{ d.modo }}</dd>
         <dt class="col-5">Último contato</dt><dd class="col-7">{{ d.ultimo_contato|data_hora(fuso) if d.ultimo_contato else '—' }}</dd>
-        <dt class="col-5">Último log coletado</dt><dd class="col-7">{{ d.ultimo_log_id }} {% if d.config.get('logs_no_dispositivo') %}<small class="text-muted">({{ d.config.logs_no_dispositivo }} na catraca)</small>{% endif %}</dd>
+        <dt class="col-5">Último log coletado</dt><dd class="col-7">{{ d.coleta_log_id }}{% if d.log_epoca %} <small class="text-muted">(depois de {{ d.log_epoca }} reset(s))</small>{% endif %} {% if d.config.get('logs_no_dispositivo') %}<small class="text-muted">({{ d.config.logs_no_dispositivo }} na catraca)</small>{% endif %}</dd>
       </dl>
       {% if tem_permissao('gerir_dispositivos') %}
       <div class="d-flex flex-wrap gap-1 mt-2">
@@ -19,6 +19,7 @@
         <form method="post" action="{{ url_for('dispositivos.modo', dispositivo_id=d.id) }}"><input type="hidden" name="modo" value="{{ 'standalone' if d.modo == 'pro' else 'pro' }}"><button class="btn btn-sm btn-outline-warning">Mudar para {{ 'Standalone' if d.modo == 'pro' else 'Pro (online)' }}</button></form>
         <form method="post" action="{{ url_for('dispositivos.acertar_hora', dispositivo_id=d.id) }}"><button class="btn btn-sm btn-outline-secondary">Acertar hora</button></form>
         <form method="post" action="{{ url_for('dispositivos.sincronizar_todos', dispositivo_id=d.id) }}"><button class="btn btn-sm btn-outline-secondary">Reenviar todo mundo</button></form>
+        <form method="post" action="{{ url_for('dispositivos.reconciliar', dispositivo_id=d.id) }}" onsubmit="return confirm('Conferir o cadastro da catraca? Use depois de reset ou troca do equipamento.')"><button class="btn btn-sm btn-outline-danger">Reconciliar (após reset/troca)</button></form>
         <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dispositivos.editar', dispositivo_id=d.id) }}">Editar</a>
       </div>
       <div class="small text-muted mt-2">Comandos são executados pelo servidor da escola{% if agente_visto_em %} — visto em {{ agente_visto_em[:16]|replace('T',' ') }} UTC{% if agente.base_url %}, Monitor/Pro apontam para <code>{{ agente.base_url }}</code>{% endif %}{% elif modo == 'nuvem' %} — <b class="text-danger">servidor da escola ainda não se conectou</b>{% endif %}.</div>

@@ -17,21 +17,34 @@ OFFLINE_APOS = timedelta(minutes=3)
 
 
 def coletar_dispositivo(dispositivo, adapter=None):
+    """Varre os registros da catraca em sequência a partir do cursor da COLETA (não o do
+    Monitor): o que o Monitor perdeu no meio também entra (C8). O dedupe descarta o resto."""
     adapter = adapter or adaptador_para(dispositivo)
     total = 0
-    since = int(dispositivo["ultimo_log_id"] or 0)
-    while True:
-        logs = adapter.fetch_logs(since, limit=LOTE)
-        if not logs:
-            break
+    since = int(dispositivo.get("coleta_log_id") or 0)
+    logs = adapter.fetch_logs(since, limit=LOTE)
+    if not logs and since > 0:
+        # Revisão (C5): numeração recomeçou (reset)? O maior número na catraca ficou abaixo do
+        # nosso cursor: abre época nova e coleta do zero.
+        maior = adapter.ultimo_log_id()
+        if maior < since:
+            eventos.nova_epoca(dispositivo, f"maior registro na catraca ({maior}) abaixo do já coletado ({since})")
+            since = 0
+            logs = adapter.fetch_logs(since, limit=LOTE)
+    epoca = dispositivo.get("log_epoca")
+    while logs:
         for item in logs:
             eventos.processar_access_log(dispositivo, item)
+            if dispositivo.get("log_epoca") != epoca:
+                return total  # o próprio registro revelou um reset: recomeça do zero na próxima volta
             since = max(since, int(item["id"]))
             total += 1
-        db.execute("UPDATE dispositivos SET ultimo_log_id = GREATEST(ultimo_log_id, %s) WHERE id = %s", (since, dispositivo["id"]))
+        db.execute("UPDATE dispositivos SET coleta_log_id = %s, ultimo_log_id = GREATEST(ultimo_log_id, %s) WHERE id = %s", (since, since, dispositivo["id"]))
+        dispositivo["coleta_log_id"] = since
         if len(logs) < LOTE:
             break
-    db.execute("UPDATE dispositivos SET status = 'online', ultimo_contato = now() WHERE id = %s", (dispositivo["id"],))
+        logs = adapter.fetch_logs(since, limit=LOTE)
+    db.execute("UPDATE dispositivos SET status = CASE WHEN status = 'contingencia' THEN status ELSE 'online' END, ultimo_contato = now() WHERE id = %s", (dispositivo["id"],))
     return total
 
 

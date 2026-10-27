@@ -1,13 +1,16 @@
 """Modo Pro: a catraca pergunta ao servidor em /new_user_identified.fcgi."""
+import secrets
+
 from app import db
 from app.eventos import tipos
 from tests.conftest import DEVICE_ID, access_log, dao, hoje_as, unix
 
 
-def identificar(cliente, user_id, component_id, quando, portal_id=None):
+def identificar(cliente, user_id, component_id, quando, portal_id=None, uuid=None):
+    # [DOC] cada identificação tem um uuid próprio; o mesmo uuid = a catraca repetindo o pedido
     return cliente.post("/api/catraca/tok-teste/new_user_identified.fcgi", data={
         "device_id": DEVICE_ID, "identifier_id": 1, "time": unix(quando), "portal_id": portal_id or (1 if component_id == "0MS1" else 2),
-        "uuid": "abc", "user_id": user_id, "user_name": "x", "event": 7, "component_id": component_id,
+        "uuid": uuid or secrets.token_hex(8), "user_id": user_id, "user_name": "x", "event": 7, "component_id": component_id,
     }).get_json()["result"]
 
 

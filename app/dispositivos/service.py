@@ -107,6 +107,22 @@ def enfileirar_todos_da_unidade(dispositivo_id, unidade_id):
     return len(pessoas)
 
 
+def enfileirar_regras(dispositivo_id=None, turma_id=None):
+    """set_rules de quem já está na catraca (por catraca, ou dos alunos de uma turma).
+    Revisão (C6): mudar "só sai com responsável" na turma não reenviava as regras; offline a
+    catraca seguia com a regra antiga."""
+    if turma_id is not None:
+        rows = db.query("SELECT dp.dispositivo_id, dp.pessoa_id FROM alunos a JOIN pessoas p ON p.id = a.pessoa_id "
+                        "JOIN dispositivo_pessoa dp ON dp.pessoa_id = p.id JOIN dispositivos d ON d.id = dp.dispositivo_id "
+                        "WHERE a.turma_id = %s AND p.status <> 'desligado' AND d.ativo", (turma_id,))
+    else:
+        rows = db.query("SELECT dp.dispositivo_id, dp.pessoa_id FROM dispositivo_pessoa dp JOIN pessoas p ON p.id = dp.pessoa_id "
+                        "WHERE dp.dispositivo_id = %s AND p.status <> 'desligado'", (dispositivo_id,))
+    for r in rows:
+        enfileirar(r["dispositivo_id"], "set_rules", r["pessoa_id"])
+    return len(rows)
+
+
 def resumo_fila(unidade_id):
     return db.query(
         "SELECT f.status, count(*) AS n FROM fila_sync f JOIN dispositivos d ON d.id = f.dispositivo_id "
@@ -116,8 +132,11 @@ def resumo_fila(unidade_id):
 
 
 def status_sync_pessoa(pessoa_id):
+    # Revisão (C10): o status dizia "sincronizado" com a remoção ou o bloqueio parados na fila
     return db.query(
-        "SELECT dp.*, d.nome AS dispositivo_nome, d.status AS dispositivo_status FROM dispositivo_pessoa dp "
-        "JOIN dispositivos d ON d.id = dp.dispositivo_id WHERE dp.pessoa_id = %s ORDER BY d.nome",
+        "SELECT dp.*, d.nome AS dispositivo_nome, d.status AS dispositivo_status, "
+        "(SELECT string_agg(f.tipo || ': ' || f.status || COALESCE(' — ' || f.erro, ''), '; ' ORDER BY f.id) FROM fila_sync f "
+        " WHERE f.dispositivo_id = dp.dispositivo_id AND f.pessoa_id = dp.pessoa_id AND f.status IN ('pendente','processando','erro')) AS fila_aberta "
+        "FROM dispositivo_pessoa dp JOIN dispositivos d ON d.id = dp.dispositivo_id WHERE dp.pessoa_id = %s ORDER BY d.nome",
         (pessoa_id,),
     )

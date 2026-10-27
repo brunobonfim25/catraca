@@ -157,7 +157,7 @@ def test_endpoints_da_nuvem(app, seed):
     c.post("/api/espelho/reverso/confirmar", json={"ate": rev["ate"]}, headers=_h("tok-x"))
     assert c.get("/api/espelho/reverso?desde_xid=0&desde=0", headers=_h("tok-x")).get_json()["itens"] == []
     r = c.post("/api/espelho/ping", json={"versao": "2", "base_url": "http://10.0.0.5", "ip_lan": "8.8.8.8"}, headers=_h("tok-x"))
-    assert r.status_code == 200 and r.get_json()["agora"] and r.get_json()["schema_nuvem"].startswith("009")
+    assert r.status_code == 200 and r.get_json()["agora"] and r.get_json()["schema_nuvem"] == service.versao_schema()
     agente = db.query("SELECT config->'agente' AS a FROM unidades WHERE id = %s", (uid,), one=True)["a"]
     assert agente["base_url"] == "http://10.0.0.5" and agente["ip_lan"] is None  # IP público não vale
     assert nuvem.test_client().get("/agente").status_code == 404

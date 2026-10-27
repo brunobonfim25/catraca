@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from ..base_adapter import BaseAdapter, DispositivoErro, FotoRejeitada
+from ..base_adapter import BaseAdapter, DispositivoErro, DispositivoInacessivel, FotoRejeitada
 
 # [DOC] códigos de evento de access_logs (Lista de Objetos)
 EVENTO_DISPOSITIVO_INVALIDO = 1
@@ -60,9 +60,11 @@ class ControlIdAdapter(BaseAdapter):
         params = dict(params or {})
         params["session"] = self._sessao  # [DOC] sessão vai na query string em todas as chamadas
         try:
-            r = self._http.request(method, self._url(endpoint), json=json, data=data, params=params, headers=headers, timeout=self.timeout)
+            # foto é maior e a catraca gera o template na hora: tempo maior só pra ela
+            timeout = self.timeout * 3 if endpoint.startswith("user_set_image") else self.timeout
+            r = self._http.request(method, self._url(endpoint), json=json, data=data, params=params, headers=headers, timeout=timeout)
         except requests.RequestException as e:
-            raise DispositivoErro(f"sem resposta de {self.base_url}: {e}") from e
+            raise DispositivoInacessivel(f"sem resposta de {self.base_url}: {e}") from e
         # [SUP] sessão expirada responde 401; a doc não diz. Relogamos uma vez e repetimos.
         if r.status_code == 401 and relogar:
             self._sessao = None
@@ -87,7 +89,7 @@ class ControlIdAdapter(BaseAdapter):
         try:
             r = self._http.post(self._url("login.fcgi"), json={"login": self.usuario, "password": self.senha}, timeout=self.timeout)
         except requests.RequestException as e:
-            raise DispositivoErro(f"sem resposta de {self.base_url}: {e}") from e
+            raise DispositivoInacessivel(f"sem resposta de {self.base_url}: {e}") from e
         if r.status_code >= 400:
             raise DispositivoErro(f"login recusado (HTTP {r.status_code})")
         sessao = r.json().get("session")
@@ -213,7 +215,12 @@ class ControlIdAdapter(BaseAdapter):
             valores["end_time"] = int(pessoa["end_time"])
         user_id = pessoa.get("user_id_no_dispositivo")
         if user_id:
-            if self.modify_objects("users", valores, {"users": {"id": int(user_id)}}) > 0:
+            # Revisão (C4): depois de reset/troca da catraca o número guardado pode ser de OUTRA
+            # pessoa; modificar às cegas punha nome, foto e regra no usuário errado. Só usa o
+            # número se o usuário dele tem o nosso id em `registration`.
+            atual = self.load_objects("users", where={"users": {"id": int(user_id)}}, fields=["id", "registration"])
+            if atual and str(atual[0].get("registration") or "") == str(pessoa["id"]):
+                self.modify_objects("users", valores, {"users": {"id": int(user_id)}})
                 return int(user_id)
         achados = self.load_objects("users", where={"users": {"registration": str(pessoa["id"])}}, fields=["id"])
         if achados:
@@ -295,6 +302,27 @@ class ControlIdAdapter(BaseAdapter):
         # [DOC] POST /execute_actions.fcgi {"actions":[{"action":"catra","parameters":"allow=clockwise"}]}
         allow = DIRECAO_CATRA.get(direction, "both")
         self._json("execute_actions.fcgi", {"actions": [{"action": "catra", "parameters": f"allow={allow}"}]})
+
+    def usuarios(self):
+        """Todos os usuários da catraca: [{id, registration, name}] (reconciliação)."""
+        saida, offset = [], 0
+        while True:
+            pagina = self.load_objects("users", fields=["id", "registration", "name"], order=["id", "ascending"], limit=500, offset=offset)
+            saida.extend(pagina)
+            if len(pagina) < 500:
+                return saida
+            offset += 500
+
+    def ultimo_log_id(self):
+        # [SUP] order ["id","descending"] + limit 1 = maior id; a doc mostra "ascending"/"descending"
+        ult = self.load_objects("access_logs", fields=["id"], order=["id", "descending"], limit=1)
+        return int(ult[0]["id"]) if ult else 0
+
+    def destruir_regra(self, regra_id):
+        """Apaga a regra e os vínculos (portal, horário, usuários)."""
+        for objeto in ("portal_access_rules", "access_rule_time_zones", "user_access_rules"):
+            self.destroy_objects(objeto, {objeto: {"access_rule_id": int(regra_id)}})
+        self.destroy_objects("access_rules", {"access_rules": {"id": int(regra_id)}})
 
     def fetch_logs(self, since_id=0, limit=500):
         # [DOC] load_objects access_logs com where id > since_id. Guardamos o último id por dispositivo.
