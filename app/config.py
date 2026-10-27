@@ -26,6 +26,8 @@ class Config:
     MAX_CONTENT_LENGTH = 3 * 1024 * 1024
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
+    # Na nuvem (HTTPS) o cookie de sessão não deve viajar em HTTP
+    SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
     PERMANENT_SESSION_LIFETIME = 60 * 60 * 10
 
     # Onde este processo roda:
