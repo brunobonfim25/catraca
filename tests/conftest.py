@@ -88,6 +88,19 @@ def outbox_ligado(ctx):
     db.gucs, db.contexto.unidade_id = {}, None
 
 
+@pytest.fixture(autouse=True)
+def horario_simulado(monkeypatch):
+    """Os testes simulam a catraca às 7h, 17h etc. (hoje_as), não na hora real em que rodam:
+    sem isso a tolerância do relógio e o "aviso atrasado" mudariam o resultado conforme o
+    horário da execução. Testes desses dois casos ajustam os valores de volta."""
+    from datetime import timedelta as _td
+
+    from app.eventos import service as _ev
+
+    monkeypatch.setattr(_ev, "TOLERANCIA_RELOGIO", _td(days=3650))
+    monkeypatch.setattr(_ev, "ATRASO_AVISO_MIN", 60 * 24 * 3650)
+
+
 @pytest.fixture
 def ctx(app):
     with app.app_context():

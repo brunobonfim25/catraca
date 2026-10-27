@@ -68,8 +68,14 @@ def _turma_do_aluno(pessoa_id):
 # ---------------------------------------------------------------- responsável em espera
 
 def registrar_espera(unidade, responsavel_pessoa, dispositivo=None, quando=None, log_id=None, evento_dispositivo=None):
-    """Responsável se identificou no leitor de fora → fica em espera por N minutos."""
+    """Responsável se identificou no leitor de fora → fica em espera por N minutos.
+    Responsável bloqueado/desligado não gera espera: devolve (None, evento com alerta)."""
     quando = quando or agora_utc()
+    if responsavel_pessoa["status"] != "ativo":
+        evento = registrar(unidade["id"], tipos.ACESSO_NEGADO, quando, dispositivo_id=dispositivo["id"] if dispositivo else None,
+                           pessoa_id=responsavel_pessoa["id"], sentido="entrada", log_id=log_id, evento_dispositivo=evento_dispositivo,
+                           detalhes={"motivo": f"responsável {responsavel_pessoa['status']}", "alerta": "responsável bloqueado tentou retirar"})
+        return None, evento
     resp = db.query("SELECT * FROM responsaveis WHERE pessoa_id = %s", (responsavel_pessoa["id"],), one=True)
     minutos = int((unidade.get("config") or {}).get("espera_responsavel_min") or 15)
     expira = quando + timedelta(minutes=minutos)
@@ -89,16 +95,53 @@ def registrar_espera(unidade, responsavel_pessoa, dispositivo=None, quando=None,
     return espera, evento
 
 
-def consumir_espera(espera_id, aluno_id):
-    db.execute("UPDATE responsavel_em_espera SET consumido_em = now(), aluno_id = %s WHERE id = %s", (aluno_id, espera_id))
+def consumir_espera(espera_id, aluno_id, responsavel_id):
+    """Chamar DEPOIS de atualizar a presença do aluno que saiu. A espera só se encerra quando
+    nenhum outro filho vinculado a esse responsável continua dentro: antes o primeiro irmão
+    consumia a espera e o segundo ficava preso na catraca."""
+    restante = db.query(
+        "SELECT 1 FROM aluno_responsavel ar JOIN alunos a ON a.id = ar.aluno_id JOIN presenca pr ON pr.pessoa_id = a.pessoa_id "
+        "JOIN pessoas p ON p.id = a.pessoa_id WHERE ar.responsavel_id = %s AND a.id <> %s AND pr.dentro AND p.status = 'ativo' LIMIT 1",
+        (responsavel_id, aluno_id), one=True,
+    )
+    db.execute("UPDATE responsavel_em_espera SET aluno_id = %s, consumido_em = CASE WHEN %s THEN consumido_em ELSE now() END WHERE id = %s",
+               (aluno_id, restante is not None, espera_id))
+
+
+# Responsável saiu pela catraca: a espera dele acaba em 2 min (dá tempo do filho passar logo
+# atrás; não sobra espera da manhã para a criança sair sozinha depois).
+SAIDA_RESPONSAVEL_GRACA_MIN = 2
+
+
+def encerrar_esperas_do_responsavel(responsavel_pessoa_id, em_minutos=0):
+    db.execute(
+        "UPDATE responsavel_em_espera SET expira_em = LEAST(expira_em, now() + make_interval(mins => %s)) "
+        "WHERE consumido_em IS NULL AND expira_em > now() AND responsavel_id = (SELECT id FROM responsaveis WHERE pessoa_id = %s)",
+        (em_minutos, responsavel_pessoa_id),
+    )
 
 
 # ---------------------------------------------------------------- Telegram
 
+SEM_RESPONSAVEL = "SAIDA_SEM_RESPONSAVEL"  # só texto: a catraca liberou sem o servidor concordar
+ATRASO_AVISO_MIN = 10
+
+
 def texto_evento(tipo, pessoa, turma_nome, quando_local, retirado_por=None, parentesco=None, justificativa=None):
+    texto = _texto_evento(tipo, pessoa, turma_nome, quando_local, retirado_por, parentesco, justificativa)
+    # Coleta depois de queda manda o aviso horas depois: sem a data e o "atrasado", o pai
+    # achava que a criança tinha acabado de entrar.
+    if texto and agora_utc() - quando_local > timedelta(minutes=ATRASO_AVISO_MIN):
+        texto = texto.replace(f"às {quando_local:%H:%M}", f"em {quando_local:%d/%m} às {quando_local:%H:%M}", 1) + " (aviso atrasado)"
+    return texto
+
+
+def _texto_evento(tipo, pessoa, turma_nome, quando_local, retirado_por=None, parentesco=None, justificativa=None):
     nome = primeiro_nome(pessoa["nome"])
     turma = f" ({turma_nome})" if turma_nome else ""
     hora = quando_local.strftime("%H:%M")
+    if tipo == SEM_RESPONSAVEL:
+        return f"{nome}{turma} saiu às {hora} sem responsável registrado na catraca. A escola foi avisada."
     if tipo == tipos.ENTRADA:
         return f"{nome}{turma} entrou às {hora}."
     if tipo == tipos.ENTRADA_ATRASADA:
@@ -121,14 +164,31 @@ def texto_evento(tipo, pessoa, turma_nome, quando_local, retirado_por=None, pare
 def notificar_responsaveis(aluno_pessoa, texto, evento_id, unidade_id):
     if not texto:
         return 0
+    # só responsável ativo: desligado (ex.: disputa de guarda) não recebe mais nada
     resps = db.query(
         "SELECT r.id FROM aluno_responsavel ar JOIN responsaveis r ON r.id = ar.responsavel_id "
-        "JOIN alunos a ON a.id = ar.aluno_id WHERE a.pessoa_id = %s",
+        "JOIN pessoas rp ON rp.id = r.pessoa_id JOIN alunos a ON a.id = ar.aluno_id WHERE a.pessoa_id = %s AND rp.status = 'ativo'",
         (aluno_pessoa["id"],),
     )
     for r in resps:
         telegram.enfileirar(unidade_id, r["id"], texto, evento_id)
     return len(resps)
+
+
+NEGADA_INTERVALO_MIN = 10
+
+
+def _avisar_negada(pessoa, evento, unidade, ocorrido):
+    """Um aviso de "tentou sair" por aluno a cada 10 min: criança brincando perto do leitor
+    gerava dezenas de mensagens alarmantes para os pais."""
+    recente = db.query(
+        "SELECT 1 FROM eventos WHERE pessoa_id = %s AND tipo = %s AND id <> %s AND ocorrido_em > %s LIMIT 1",
+        (pessoa["id"], tipos.SAIDA_NEGADA, evento["id"], ocorrido - timedelta(minutes=NEGADA_INTERVALO_MIN)), one=True,
+    )
+    if recente:
+        return
+    turma = _turma_do_aluno(pessoa["id"])
+    notificar_responsaveis(pessoa, texto_evento(tipos.SAIDA_NEGADA, pessoa, turma and turma["nome"], para_local(ocorrido, unidade["fuso"])), evento["id"], unidade["id"])
 
 
 # ---------------------------------------------------------------- access_logs (Standalone / coleta / espelho do Pro)
@@ -178,8 +238,7 @@ def processar_access_log(dispositivo, item):
         tipo = tipos.SAIDA_NEGADA if sentido == "saida" else tipos.ACESSO_NEGADO
         evento = registrar(unidade["id"], tipo, ocorrido, **base)
         if evento and pessoa and pessoa["tipo"] == "aluno" and sentido == "saida":
-            turma = _turma_do_aluno(pessoa["id"])
-            notificar_responsaveis(pessoa, texto_evento(tipo, pessoa, turma and turma["nome"], para_local(ocorrido, unidade["fuso"])), evento["id"], unidade["id"])
+            _avisar_negada(pessoa, evento, unidade, ocorrido)
     elif codigo == 13:
         evento = registrar(unidade["id"], tipos.DESISTENCIA, ocorrido, **base)
         # Liberou e não girou: desfaz a presença que o evento 7 tinha marcado
@@ -206,6 +265,7 @@ def _processar_liberado(unidade, dispositivo, pessoa, sentido, ocorrido, base):
         if sentido == "entrada":
             _, evento = registrar_espera(unidade, pessoa, dispositivo, ocorrido, log_id=base["log_id"], evento_dispositivo=7)
             return evento
+        encerrar_esperas_do_responsavel(pessoa["id"], SAIDA_RESPONSAVEL_GRACA_MIN)
         return registrar(unidade["id"], tipos.SAIDA, ocorrido, **base)
 
     turma = _turma_do_aluno(pessoa["id"]) if pessoa["tipo"] == "aluno" else None
@@ -223,13 +283,12 @@ def _processar_liberado(unidade, dispositivo, pessoa, sentido, ocorrido, base):
         return evento
 
     # saída liberada pela catraca (Standalone): registra o que o servidor teria decidido
-    tipo, correlacao, detalhes_extra, parentesco, retirado_por = tipos.SAIDA, None, {}, None, None
+    tipo, correlacao, detalhes_extra, parentesco, retirado_por, decisao = tipos.SAIDA, None, {}, None, None, None
     if turma:
         decisao = acesso.decidir(pessoa["id"], "saida", unidade, ocorrido)
         if decisao.liberar:
             tipo = decisao.tipo
             if decisao.espera_id:
-                consumir_espera(decisao.espera_id, turma["aluno_id"])
                 resp = db.query("SELECT p.id, p.nome, ar.parentesco FROM responsaveis r JOIN pessoas p ON p.id = r.pessoa_id "
                                 "LEFT JOIN aluno_responsavel ar ON ar.responsavel_id = r.id AND ar.aluno_id = %s WHERE r.id = %s",
                                 (turma["aluno_id"], decisao.responsavel_id), one=True)
@@ -242,8 +301,11 @@ def _processar_liberado(unidade, dispositivo, pessoa, sentido, ocorrido, base):
     evento = registrar(unidade["id"], tipo, ocorrido, **base)
     if evento:
         atualizar_presenca(pessoa["id"], unidade["id"], False, evento["id"], ocorrido)
+        if decisao and decisao.liberar and decisao.espera_id:
+            consumir_espera(decisao.espera_id, turma["aluno_id"], decisao.responsavel_id)
         if turma:
-            notificar_responsaveis(pessoa, texto_evento(tipo, pessoa, turma["nome"], local, retirado_por, parentesco), evento["id"], unidade["id"])
+            texto_tipo = SEM_RESPONSAVEL if detalhes_extra else tipo
+            notificar_responsaveis(pessoa, texto_evento(texto_tipo, pessoa, turma["nome"], local, retirado_por, parentesco), evento["id"], unidade["id"])
     return evento
 
 
@@ -260,17 +322,36 @@ def _responsavel_acompanhando(unidade_id, dispositivo_id, aluno_pessoa, ocorrido
 
 # ---------------------------------------------------------------- modo Pro (decisão online)
 
+# Relógio da catraca: ninguém acerta a hora dela, e se o firmware mandar hora local como se
+# fosse UTC tudo sai 3 h errado. Até 10 min de diferença vale a hora dela (mantém a ordem real
+# dos eventos); acima disso decide pela hora do servidor e deixa o alerta no evento.
+TOLERANCIA_RELOGIO = timedelta(minutes=10)
+
+
+def hora_da_decisao(time_catraca):
+    """(hora a usar, diferença em minutos se o relógio da catraca está fora da tolerância)."""
+    agora = agora_utc()
+    if not time_catraca:
+        return agora, None
+    catraca = de_unix(time_catraca)
+    if abs(catraca - agora) <= TOLERANCIA_RELOGIO:
+        return catraca, None
+    return agora, int((catraca - agora).total_seconds() // 60)
+
+
 def decidir_online(dispositivo, campos):
     """Catraca em modo Pro identificou alguém e pergunta se libera.
     Devolve (resposta_para_catraca, evento). Formato [DOC]: {"result": {event, user_id, user_name, actions[], message}}."""
     unidade = _unidade(dispositivo["unidade_id"])
     user_id = int(campos.get("user_id") or 0)
-    ocorrido = de_unix(campos["time"]) if campos.get("time") else agora_utc()
+    ocorrido, diferenca = hora_da_decisao(campos.get("time"))
     sentido = dispositivos.sentido_do_leitor(dispositivo, component_id=campos.get("component_id"), portal_id=campos.get("portal_id"))
     pessoa = pessoa_por_user_id(dispositivo["id"], user_id)
     cfg = dispositivo.get("config") or {}
-    allow = {"entrada": cfg.get("allow_entrada", "clockwise"), "saida": cfg.get("allow_saida", "anticlockwise")}.get(sentido, "both")
+    allow = {"entrada": cfg.get("allow_entrada", "clockwise"), "saida": cfg.get("allow_saida", "anticlockwise")}.get(sentido)
     detalhes = {"user_id": user_id, "component_id": campos.get("component_id"), "portal_id": campos.get("portal_id"), "modo": "pro"}
+    if diferenca is not None:
+        detalhes["alerta"] = f"relógio da catraca com {diferenca} min de diferença: decidido pela hora do servidor"
 
     def negar(tipo, motivo, msg):
         ev = registrar(unidade["id"], tipo, ocorrido, dispositivo_id=dispositivo["id"], pessoa_id=pessoa["id"] if pessoa else None,
@@ -279,8 +360,13 @@ def decidir_online(dispositivo, campos):
 
     if pessoa is None:
         return negar(tipos.ACESSO_NEGADO, "user_id sem pessoa", "Não cadastrado")
+    if sentido is None:
+        # leitor sem sentido mapeado: antes virava "saída liberada para os dois lados"
+        return negar(tipos.ACESSO_NEGADO, "leitor sem sentido mapeado", "Procure a recepção")
 
     if pessoa["tipo"] == "responsavel" and sentido == "entrada":
+        if pessoa["status"] != "ativo":
+            return negar(tipos.ACESSO_NEGADO, f"responsável {pessoa['status']}", "Procure a recepção")
         espera, ev = registrar_espera(unidade, pessoa, dispositivo, ocorrido, evento_dispositivo=7)
         alunos = ", ".join(primeiro_nome(a) for a in (ev["detalhes"].get("alunos") or [])) or "aluno"
         modo = (unidade.get("config") or {}).get("responsavel_resposta", "aguardar")
@@ -297,14 +383,12 @@ def decidir_online(dispositivo, campos):
         msg = {"saida": "Aguardando responsável", "entrada": "Acesso negado"}.get(sentido, "Negado")
         resp, ev = negar(decisao.tipo, decisao.motivo, msg)
         if pessoa["tipo"] == "aluno" and sentido == "saida" and ev:
-            turma = _turma_do_aluno(pessoa["id"])
-            notificar_responsaveis(pessoa, texto_evento(tipos.SAIDA_NEGADA, pessoa, turma and turma["nome"], para_local(ocorrido, unidade["fuso"])), ev["id"], unidade["id"])
+            _avisar_negada(pessoa, ev, unidade, ocorrido)
         return resp, ev
 
     correlacao, retirado_por, parentesco = None, None, None
     turma = _turma_do_aluno(pessoa["id"]) if pessoa["tipo"] == "aluno" else None
     if decisao.espera_id and turma:
-        consumir_espera(decisao.espera_id, turma["aluno_id"])
         r = db.query("SELECT p.id, p.nome, ar.parentesco FROM responsaveis r JOIN pessoas p ON p.id = r.pessoa_id "
                      "LEFT JOIN aluno_responsavel ar ON ar.responsavel_id = r.id AND ar.aluno_id = %s WHERE r.id = %s",
                      (turma["aluno_id"], decisao.responsavel_id), one=True)
@@ -313,6 +397,10 @@ def decidir_online(dispositivo, campos):
                    evento_dispositivo=7, correlacao_id=correlacao, detalhes={**detalhes, "motivo": decisao.motivo})
     if ev:
         atualizar_presenca(pessoa["id"], unidade["id"], sentido == "entrada", ev["id"], ocorrido)
+        if decisao.espera_id and turma:
+            consumir_espera(decisao.espera_id, turma["aluno_id"], decisao.responsavel_id)
+        if pessoa["tipo"] == "responsavel" and sentido == "saida":
+            encerrar_esperas_do_responsavel(pessoa["id"], SAIDA_RESPONSAVEL_GRACA_MIN)
         if turma:
             notificar_responsaveis(pessoa, texto_evento(decisao.tipo, pessoa, turma["nome"], para_local(ocorrido, unidade["fuso"]), retirado_por, parentesco), ev["id"], unidade["id"])
     mensagem = {"entrada": "Bem-vindo(a)", "saida": "Até amanhã"}.get(sentido, "Liberado")
@@ -325,7 +413,11 @@ def decidir_online(dispositivo, campos):
 def liberar_manual(unidade, usuario_id, sentido, justificativa, pessoa_id=None, dispositivo_id=None, nome_visitante=None, girar_catraca=True):
     """Recepção libera com justificativa. Fica no log com quem autorizou; pais recebem aviso."""
     quando = agora_utc()
-    pessoa = db.query("SELECT * FROM pessoas WHERE id = %s", (pessoa_id,), one=True) if pessoa_id else None
+    pessoa = db.query("SELECT * FROM pessoas WHERE id = %s AND unidade_id = %s", (pessoa_id, unidade["id"]), one=True) if pessoa_id else None
+    if pessoa_id and not pessoa:
+        raise ValueError("pessoa não é desta escola")
+    if dispositivo_id and not db.query("SELECT 1 FROM dispositivos WHERE id = %s AND unidade_id = %s", (dispositivo_id, unidade["id"]), one=True):
+        raise ValueError("catraca não é desta escola")
     tipo = tipos.LIBERACAO_MANUAL
     turma = None
     if pessoa and pessoa["tipo"] == "aluno":
@@ -353,11 +445,17 @@ def _liberar_na_catraca(dispositivo_id, sentido):
     d = db.query("SELECT id FROM dispositivos WHERE id = %s AND ativo", (dispositivo_id,), one=True)
     if not d:
         return "dispositivo não encontrado"
+    # Validade de 60 s: sem internet a recepção clicava 3 vezes e, quando o servidor da escola
+    # voltava, a catraca dava 3 giros para quem estivesse na frente.
     db.execute(
         "INSERT INTO fila_sync (dispositivo_id, tipo, payload) VALUES (%s, 'liberar', %s)",
-        (dispositivo_id, json.dumps({"sentido": {"entrada": "entrada", "saida": "saida"}.get(sentido, "ambos")})),
+        (dispositivo_id, json.dumps({"sentido": {"entrada": "entrada", "saida": "saida"}.get(sentido, "ambos"),
+                                     "expira_em": (agora_utc() + timedelta(seconds=LIBERAR_VALIDADE_SEG)).isoformat()})),
     )
     return None
+
+
+LIBERAR_VALIDADE_SEG = 60
 
 
 # ---------------------------------------------------------------- Monitor: outros endpoints

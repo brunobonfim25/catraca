@@ -3,7 +3,7 @@ pode rodar mais de um worker sem duplicar envio."""
 import json
 import logging
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from app import db
@@ -19,12 +19,19 @@ BACKOFF_SEG = (10, 30, 60, 120, 300, 600, 1200, 1800)
 NOME_REGRA_LIBERADO = "Nexosix - liberado"
 
 
+class ComandoVencido(Exception):
+    """Comando que perdeu a validade antes de chegar à catraca (não repete)."""
+
+
 def reservar(limite=20):
     """Marca até `limite` itens como processando e devolve. Outro worker não vê os mesmos."""
     with db.transacao() as cur:
+        # Comandos e bloqueios antes das fotos: um "liberar" ou a remoção de um desligado não
+        # pode esperar atrás de 900 fotos da carga inicial.
         cur.execute(
             "SELECT id FROM fila_sync WHERE status = 'pendente' AND proximo_em <= now() "
-            "ORDER BY proximo_em, id LIMIT %s FOR UPDATE SKIP LOCKED",
+            "ORDER BY CASE WHEN tipo IN ('liberar','remove_user','set_rules','testar','modo','configurar_monitor','set_clock') THEN 0 ELSE 1 END, "
+            "proximo_em, id LIMIT %s FOR UPDATE SKIP LOCKED",
             (limite,),
         )
         ids = [r["id"] for r in cur.fetchall()]
@@ -122,6 +129,9 @@ def processar_item(item, adapter, dispositivo):
         adapter.set_clock(fuso=payload.get("fuso", "America/Sao_Paulo"))
         return
     if tipo == "liberar":
+        expira = payload.get("expira_em")
+        if expira and datetime.fromisoformat(expira) < datetime.now(timezone.utc):
+            raise ComandoVencido("liberação vencida: passou de 60 s até chegar à catraca; a recepção deve liberar de novo")
         adapter.release(payload.get("sentido", "ambos"))
         return
     if tipo == "testar":
@@ -212,13 +222,14 @@ def processar_fila(limite=20, adaptadores=None):
             concluir(item["id"])
             db.execute("UPDATE dispositivos SET status = 'online', ultimo_contato = now() WHERE id = %s", (dispositivo["id"],))
             ok += 1
-        except FotoRejeitada as e:
+        except (FotoRejeitada, ComandoVencido) as e:
             falhar(item, e, definitivo=True)
             falhas += 1
         except DispositivoErro as e:
             log.warning("sync %s/%s em %s falhou: %s", item["tipo"], item["pessoa_id"], dispositivo["nome"], e)
             adaptadores.pop(dispositivo["id"], None)
-            falhar(item, e)
+            # "liberar" nunca é repetido: um timeout pode ter girado a catraca sem a resposta voltar
+            falhar(item, e, definitivo=item["tipo"] == "liberar")
             falhas += 1
         except Exception as e:  # noqa: BLE001 — bug nosso não pode travar a fila inteira
             log.exception("erro inesperado no item %s", item["id"])

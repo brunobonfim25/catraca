@@ -8,7 +8,9 @@ from .. import db
 from ..auditoria import auditar
 from ..auth.rbac import exige, unidade_atual_ou_403
 from ..dispositivos import service as dispositivos
+from ..escopo import da_unidade
 from ..eventos import tipos
+from ..util import hoje_local
 from . import service
 
 bp = Blueprint("pessoas", __name__, url_prefix="/pessoas")
@@ -70,7 +72,8 @@ def aluno_novo():
         if not f.get("nome") or not f.get("turma_id"):
             flash("Nome e turma são obrigatórios", "danger")
         else:
-            pessoa_id, _ = service.criar_aluno(un["id"], f["nome"], int(f["turma_id"]), f.get("matricula"), _tri(f.get("saida_autonoma")), f.get("documento"))
+            turma = da_unidade("turma", f["turma_id"])
+            pessoa_id, _ = service.criar_aluno(un["id"], f["nome"], turma["id"], f.get("matricula"), _tri(f.get("saida_autonoma")), f.get("documento"))
             if f.get("consentimento_por"):
                 service.registrar_consentimento(pessoa_id, f["consentimento_por"], date.today())
             flash("Aluno cadastrado. Agora tire a foto.", "success")
@@ -86,7 +89,7 @@ def aluno_editar(pessoa_id):
         abort(404)
     if request.method == "POST":
         f = request.form
-        service.atualizar_aluno(pessoa_id, f["nome"], int(f["turma_id"]), f.get("matricula"), _tri(f.get("saida_autonoma")), f.get("documento"))
+        service.atualizar_aluno(pessoa_id, f["nome"], da_unidade("turma", f["turma_id"])["id"], f.get("matricula"), _tri(f.get("saida_autonoma")), f.get("documento"))
         flash("Aluno atualizado", "success")
         return redirect(url_for("pessoas.detalhe", pessoa_id=pessoa_id))
     return render_template("pessoas/aluno_form.html", p=p, turmas=_turmas(un["id"]))
@@ -108,7 +111,7 @@ def responsavel_novo():
             if f.get("consentimento_por"):
                 service.registrar_consentimento(pessoa_id, f["consentimento_por"], date.today())
             if f.get("aluno_id"):
-                service.vincular(int(f["aluno_id"]), resp_id, f.get("parentesco"), f.get("regra") or "sempre", [int(d) for d in f.getlist("dias")])
+                service.vincular(da_unidade("aluno", f["aluno_id"])["id"], resp_id, f.get("parentesco"), f.get("regra") or "sempre", [int(d) for d in f.getlist("dias")])
             flash("Responsável cadastrado. Agora tire a foto.", "success")
             return redirect(url_for("pessoas.foto", pessoa_id=pessoa_id))
     return render_template("pessoas/responsavel_form.html", p=None, aluno_id=aluno_id, dias=DIAS)
@@ -216,7 +219,7 @@ def vincular(pessoa_id):
     un, p = _pessoa_da_unidade(pessoa_id)
     f = request.form
     try:
-        service.vincular(p["aluno_id"], int(f["responsavel_id"]), f.get("parentesco"), f.get("regra") or "sempre", [int(d) for d in f.getlist("dias")])
+        service.vincular(p["aluno_id"], da_unidade("responsavel", f["responsavel_id"])["id"], f.get("parentesco"), f.get("regra") or "sempre", [int(d) for d in f.getlist("dias")])
         flash("Responsável vinculado", "success")
     except ValueError as e:
         flash(str(e), "danger")
@@ -239,7 +242,7 @@ def aviso_retirada(pessoa_id):
     db.execute(
         "INSERT INTO avisos_retirada (unidade_id, aluno_id, responsavel_id, data, observacao, criado_por) VALUES (%s,%s,%s,%s,%s,%s) "
         "ON CONFLICT (aluno_id, responsavel_id, data) DO UPDATE SET observacao = EXCLUDED.observacao",
-        (un["id"], p["aluno_id"], int(f["responsavel_id"]), f.get("data") or date.today(), f.get("observacao"), g.usuario["id"]),
+        (un["id"], p["aluno_id"], da_unidade("responsavel", f["responsavel_id"])["id"], f.get("data") or hoje_local(un["fuso"]), f.get("observacao"), g.usuario["id"]),
     )
     auditar("aviso_retirada", "aluno", p["aluno_id"], depois={"responsavel_id": f["responsavel_id"], "data": f.get("data")})
     flash("Aviso de retirada registrado", "success")

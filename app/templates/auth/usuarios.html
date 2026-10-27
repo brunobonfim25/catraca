@@ -23,12 +23,12 @@
       <form method="post" action="{{ url_for('auth.usuario_novo') }}">
         <input class="form-control mb-2" name="nome" placeholder="Nome" required>
         <input class="form-control mb-2" name="email" type="email" placeholder="E-mail" required>
-        <input class="form-control mb-2" name="senha" type="password" placeholder="Senha inicial" minlength="8" required>
+        <input class="form-control mb-2" name="senha" type="password" placeholder="Senha inicial (8 ou mais)" minlength="8" required>
         <select class="form-select mb-2" name="perfil">
           {% for p in perfis %}{% if p != 'superadmin' or usuario.perfil == 'superadmin' %}<option value="{{ p }}" {{ 'selected' if p == 'secretaria' }}>{{ rotulos[p] }}{% if p == 'admin_unidade' %} (direção/TI){% endif %}</option>{% endif %}{% endfor %}
         </select>
         <select class="form-select mb-2" name="unidade_id">
-          <option value="">Toda a rede (direção da rede)</option>
+          {% if not usuario.unidade_id %}<option value="">Toda a rede (direção da rede)</option>{% endif %}
           {% for un in unidades %}<option value="{{ un.id }}">{{ un.nome }}</option>{% endfor %}
         </select>
         <button class="btn btn-primary w-100">Criar</button>

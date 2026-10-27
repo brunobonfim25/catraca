@@ -21,7 +21,7 @@ def purgar_desligados():
         try:
             db.execute("DELETE FROM pessoa_fotos WHERE pessoa_id = %s", (r["id"],))
             db.execute("UPDATE pessoas SET foto_atualizada_em = NULL WHERE id = %s", (r["id"],))
-            auditar("purga_lgpd", "pessoa", r["id"], depois={"motivo": f"{DIAS_RETENCAO} dias após desligamento"})
+            auditar("purga_lgpd", "pessoa", r["id"], depois={"motivo": f"{DIAS_RETENCAO} dias após desligamento"}, unidade_id=r["unidade_id"])
         finally:
             db.contexto.unidade_id = None
     # Esperas de responsável vencidas há mais de um dia não servem pra nada

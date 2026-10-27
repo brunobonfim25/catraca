@@ -70,7 +70,17 @@ def ping(token):
 @bp.get("/api/espelho/status")
 @login_obrigatorio
 def status():
-    rows = db.query("SELECT id, nome, config->>'agente_visto_em' AS visto_em, config->>'agente_erro' AS erro, config->'agente' AS agente FROM unidades ORDER BY nome")
+    """Situação dos servidores de escola: só das escolas que o usuário pode ver (antes listava
+    IP e erros de todas as escolas de todos os clientes para qualquer usuário logado)."""
+    from flask import g
+
+    from ..auth.rbac import tem_permissao, unidades_visiveis
+
+    if not tem_permissao(g.usuario, "configurar_escola"):
+        return jsonify([]), 403
+    ids = [u["id"] for u in unidades_visiveis(g.usuario)]
+    rows = db.query("SELECT id, nome, config->>'agente_visto_em' AS visto_em, config->>'agente_erro' AS erro, config->'agente' AS agente "
+                    "FROM unidades WHERE id = ANY(%s) ORDER BY nome", (ids,))
     return jsonify([dict(r) for r in rows])
 
 

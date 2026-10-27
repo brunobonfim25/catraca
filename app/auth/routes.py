@@ -1,9 +1,12 @@
 """Login/logout, troca de unidade, gestão de usuários do painel."""
+from urllib.parse import urlparse
+
 from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .. import db
 from ..auditoria import auditar
+from ..util import caminho_interno
 from .rbac import PERFIS, ROTULO_PERFIL, carregar_usuario, exige, home_de, login_obrigatorio, unidades_visiveis, pode_ver_unidade
 
 bp = Blueprint("auth", __name__)
@@ -46,8 +49,7 @@ def login():
                 visiveis = unidades_visiveis(u)
                 if len(visiveis) == 1:
                     session["unidade_id"] = visiveis[0]["id"]
-            proximo = request.args.get("proximo") or home_de(u)
-            return redirect(proximo)
+            return redirect(caminho_interno(request.args.get("proximo"), home_de(u)))
         flash("E-mail ou senha inválidos", "danger")
     return render_template("auth/login.html")
 
@@ -64,7 +66,9 @@ def trocar_unidade(unidade_id):
     un = db.query("SELECT * FROM unidades WHERE id = %s", (unidade_id,), one=True)
     if un and pode_ver_unidade(g.usuario, un):
         session["unidade_id"] = unidade_id
-    return redirect(request.referrer or url_for("painel.dashboard"))
+    volta = urlparse(request.referrer or "")
+    destino = volta.path + (f"?{volta.query}" if volta.query else "") if volta.netloc == request.host else ""
+    return redirect(caminho_interno(destino, url_for("painel.dashboard")))
 
 
 @bp.route("/usuarios")
@@ -72,10 +76,15 @@ def trocar_unidade(unidade_id):
 def usuarios():
     if g.usuario["perfil"] == "superadmin":
         rows = db.query("SELECT u.*, un.nome AS unidade_nome FROM usuarios_admin u LEFT JOIN unidades un ON un.id = u.unidade_id ORDER BY u.nome")
+    elif g.usuario["unidade_id"]:  # direção de uma escola vê só a própria escola
+        rows = db.query(
+            "SELECT u.*, un.nome AS unidade_nome FROM usuarios_admin u LEFT JOIN unidades un ON un.id = u.unidade_id "
+            "WHERE u.unidade_id = %s AND u.perfil <> 'superadmin' ORDER BY u.nome", (g.usuario["unidade_id"],),
+        )
     else:
         rows = db.query(
-            "SELECT u.*, un.nome AS unidade_nome FROM usuarios_admin u LEFT JOIN unidades un ON un.id = u.unidade_id WHERE u.empresa_id = %s ORDER BY u.nome",
-            (g.usuario["empresa_id"],),
+            "SELECT u.*, un.nome AS unidade_nome FROM usuarios_admin u LEFT JOIN unidades un ON un.id = u.unidade_id "
+            "WHERE u.empresa_id = %s AND u.perfil <> 'superadmin' ORDER BY u.nome", (g.usuario["empresa_id"],),
         )
     return render_template("auth/usuarios.html", usuarios=rows, perfis=PERFIS, rotulos=ROTULO_PERFIL, unidades=unidades_visiveis(g.usuario))
 
@@ -88,8 +97,15 @@ def usuario_novo():
     if perfil not in PERFIS or (perfil == "superadmin" and g.usuario["perfil"] != "superadmin"):
         flash("Perfil inválido", "danger")
         return redirect(url_for("auth.usuarios"))
+    if len(f.get("senha") or "") < 8:
+        flash("A senha inicial precisa de 8 caracteres ou mais", "danger")
+        return redirect(url_for("auth.usuarios"))
     unidade_id = int(f["unidade_id"]) if f.get("unidade_id") else None
     empresa_id = g.usuario["empresa_id"]
+    # Quem é de uma escola só cria usuário da própria escola. Antes, deixar o campo vazio
+    # criava um usuário da rede inteira, que entrava nas outras escolas.
+    if g.usuario["unidade_id"]:
+        unidade_id = g.usuario["unidade_id"]
     if unidade_id:
         un = db.query("SELECT * FROM unidades WHERE id = %s", (unidade_id,), one=True)
         if not un or not pode_ver_unidade(g.usuario, un):
@@ -112,8 +128,12 @@ def usuario_ativo(uid):
     u = db.query("SELECT * FROM usuarios_admin WHERE id = %s", (uid,), one=True)
     if not u or uid == g.usuario["id"]:
         return redirect(url_for("auth.usuarios"))
-    if g.usuario["perfil"] != "superadmin" and u["empresa_id"] != g.usuario["empresa_id"]:
-        return redirect(url_for("auth.usuarios"))
+    if g.usuario["perfil"] != "superadmin":
+        # dentro da rede: diretor de escola só mexe em usuário da própria escola, nunca na Nexosix
+        if u["empresa_id"] != g.usuario["empresa_id"] or u["perfil"] == "superadmin":
+            return redirect(url_for("auth.usuarios"))
+        if g.usuario["unidade_id"] and u["unidade_id"] != g.usuario["unidade_id"]:
+            return redirect(url_for("auth.usuarios"))
     db.execute("UPDATE usuarios_admin SET ativo = NOT ativo WHERE id = %s", (uid,))
     auditar("ativar_desativar", "usuarios_admin", uid, antes={"ativo": u["ativo"]}, depois={"ativo": not u["ativo"]})
     return redirect(url_for("auth.usuarios"))

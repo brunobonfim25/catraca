@@ -76,3 +76,17 @@ def formatar_telefone(valor):
     if len(d) == 10:
         return f"({d[:2]}) {d[2:6]}-{d[6:]}"
     return valor or ""
+
+
+def hoje_local(fuso=FUSO_PADRAO):
+    """Data de hoje no fuso da escola. date.today() no servidor é UTC: entre 21h e meia-noite
+    de Brasília já é "amanhã" lá, e o aviso de retirada ou o consentimento iam com a data errada."""
+    return datetime.now(_zona(fuso)).date()
+
+
+def caminho_interno(destino, padrao="/"):
+    """Só aceita redirecionar para um caminho deste site ("/painel"), nunca para outro domínio
+    ("https://..." ou "//evil"): antes o login levava a vítima para uma cópia falsa da tela."""
+    if not destino or not destino.startswith("/") or destino.startswith("//") or destino.startswith("/\\"):
+        return padrao
+    return destino

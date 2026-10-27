@@ -93,8 +93,11 @@ def liberar():
     if len(justificativa) < 5:
         flash("Justificativa obrigatória (mínimo 5 caracteres)", "danger")
         return redirect(request.referrer or url_for("painel.recepcao"))
-    pessoa_id = int(f["pessoa_id"]) if f.get("pessoa_id") else None
-    dispositivo_id = int(f["dispositivo_id"]) if f.get("dispositivo_id") else None
+    from ..escopo import da_unidade
+
+    # aluno e catraca têm de ser desta escola (antes: ids de outra escola eram aceitos)
+    pessoa_id = da_unidade("pessoa", f["pessoa_id"])["id"] if f.get("pessoa_id") else None
+    dispositivo_id = da_unidade("dispositivo", f["dispositivo_id"])["id"] if f.get("dispositivo_id") else None
     evento, erro = eventos.liberar_manual(un, g.usuario["id"], f.get("sentido") or "saida", justificativa, pessoa_id, dispositivo_id,
                                          nome_visitante=f.get("visitante"), girar_catraca=f.get("girar") == "1")
     auditar("liberar_manual", "evento", evento["id"], depois={"pessoa_id": pessoa_id, "sentido": f.get("sentido"), "justificativa": justificativa})
@@ -110,6 +113,7 @@ def liberar():
 def encerrar_espera(espera_id):
     un = unidade_atual_ou_403()
     db.execute("UPDATE responsavel_em_espera SET consumido_em = now() WHERE id = %s AND unidade_id = %s", (espera_id, un["id"]))
+    auditar("encerrar_espera", "responsavel_em_espera", espera_id)  # mexe na guarda da criança: fica registrado
     return redirect(url_for("painel.recepcao"))
 
 
@@ -190,9 +194,12 @@ def historico(pessoa_id):
 @exige("ver_auditoria")
 def auditoria():
     un = unidade_atual_ou_403()
+    # Registro sem escola (ações da Nexosix, webhook antigo) só para o superadmin: antes o
+    # auditor de uma escola via nomes de pais de outras redes por aqui.
+    sem_escola = " OR a.unidade_id IS NULL" if g.usuario["perfil"] == "superadmin" else ""
     linhas = db.query(
         "SELECT a.*, u.nome AS usuario_nome FROM auditoria a LEFT JOIN usuarios_admin u ON u.id = a.usuario_id "
-        "WHERE a.unidade_id = %s OR a.unidade_id IS NULL ORDER BY a.id DESC LIMIT 300", (un["id"],),
+        f"WHERE a.unidade_id = %s{sem_escola} ORDER BY a.id DESC LIMIT 300", (un["id"],),
     )
     return render_template("painel/auditoria.html", linhas=linhas, fuso=un["fuso"])
 

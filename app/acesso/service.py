@@ -30,7 +30,9 @@ def esperas_ativas(unidade_id, quando=None):
     return db.query(
         "SELECT e.*, p.nome AS responsavel_nome FROM responsavel_em_espera e "
         "JOIN responsaveis r ON r.id = e.responsavel_id JOIN pessoas p ON p.id = r.pessoa_id "
-        "WHERE e.unidade_id = %s AND e.consumido_em IS NULL AND e.expira_em > %s AND e.identificado_em <= %s ORDER BY e.identificado_em",
+        # responsável bloqueado ou desligado depois de chegar não retira ninguém (revisão 27/10)
+        "WHERE e.unidade_id = %s AND e.consumido_em IS NULL AND e.expira_em > %s AND e.identificado_em <= %s AND p.status = 'ativo' "
+        "ORDER BY e.identificado_em",
         (unidade_id, quando or agora_utc(), quando or agora_utc()),
     )
 
@@ -56,9 +58,17 @@ def decidir(pessoa_id, sentido, unidade, quando=None):
         return regras.decidir_entrada_pessoa(p, ctx["turma"], agora_local)
 
     # saída
-    if p["tipo"] == "aluno" and ctx["aluno"] and ctx["turma"]:
+    if p["tipo"] == "aluno" and not (ctx["aluno"] and ctx["turma"]):
+        # cadastro pela metade não pode virar "sai livre" (antes caía no Decisao(True) do fim)
+        return regras.Decisao(False, tipos.SAIDA_NEGADA, "cadastro do aluno incompleto (sem turma)")
+    if p["tipo"] == "aluno":
         vinculos = db.query("SELECT * FROM aluno_responsavel WHERE aluno_id = %s", (ctx["aluno"]["id"],))
         esperas = esperas_ativas(unidade["id"], quando or agora_utc())
+        # Espera anterior à entrada do aluno não vale: era a mãe DEIXANDO a criança de manhã.
+        # Sem isso a Maria saía sozinha às 7:05 "com a mãe", que já tinha ido embora.
+        pr = db.query("SELECT dentro, desde FROM presenca WHERE pessoa_id = %s", (pessoa_id,), one=True)
+        if pr and pr["dentro"]:
+            esperas = [e for e in esperas if e["identificado_em"] >= pr["desde"]]
         avisos = avisos_do_dia(ctx["aluno"]["id"], agora_local.date())
         return regras.decidir_saida_aluno(ctx["aluno"], ctx["turma"], vinculos, esperas, avisos, agora_local)
     return regras.Decisao(True, tipos.SAIDA)

@@ -5,6 +5,7 @@ from flask import Blueprint, Response, abort, current_app, flash, g, redirect, r
 
 from .. import db
 from ..auth.rbac import exige, unidade_atual_ou_403
+from ..escopo import da_unidade
 from . import convites as convites_mod
 from . import email as email_mod
 from . import telegram
@@ -25,11 +26,10 @@ def webhook():
 @bp.get("/telegram/ativar/<int:responsavel_id>")
 @exige("cadastrar_pessoas")
 def ativar(responsavel_id):
-    r = db.query("SELECT r.*, p.nome, p.unidade_id FROM responsaveis r JOIN pessoas p ON p.id = r.pessoa_id WHERE r.id = %s", (responsavel_id,), one=True)
-    if not r or (g.unidade and r["unidade_id"] != g.unidade["id"]):
-        abort(404)
+    # Antes: sem escola selecionada (usuário da rede) passava qualquer responsável, de qualquer rede
+    r = da_unidade("responsavel", responsavel_id)
+    un = unidade_atual_ou_403()
     # mesmo texto do convite em massa (editável em Configuração › Escola)
-    un = g.unidade or db.query("SELECT * FROM unidades WHERE id = %s", (r["unidade_id"],), one=True)
     c = convites_mod.montar(un, responsavel_id)
     return render_template("notificacoes/ativar.html", responsavel=c["responsavel"], link=c["link"], bot=current_app.config.get("TELEGRAM_BOT_USERNAME"),
                            whatsapp=telegram.link_whatsapp(r["telefone"], c["texto"]), link_escola=telegram.link_escola(r["unidade_id"]))
@@ -44,8 +44,8 @@ def qr_escola(unidade_id):
 @bp.get("/telegram/ativar/<int:responsavel_id>/qr.png")
 @exige("cadastrar_pessoas")
 def qr(responsavel_id):
-    r = db.query("SELECT telegram_token FROM responsaveis WHERE id = %s", (responsavel_id,), one=True)
-    if not r or not r["telegram_token"]:
+    r = da_unidade("responsavel", responsavel_id)
+    if not r["telegram_token"]:
         abort(404)
     return Response(telegram.qr_png(telegram.link_ativacao(r["telegram_token"])), content_type="image/png")
 
@@ -53,7 +53,11 @@ def qr(responsavel_id):
 @bp.post("/telegram/ativar/<int:responsavel_id>/novo-token")
 @exige("cadastrar_pessoas")
 def novo_token(responsavel_id):
+    da_unidade("responsavel", responsavel_id)
     telegram.gerar_token(responsavel_id)
+    from ..auditoria import auditar
+
+    auditar("novo_link_telegram", "responsavel", responsavel_id)
     from flask import redirect, url_for
 
     return redirect(url_for("notificacoes.ativar", responsavel_id=responsavel_id))

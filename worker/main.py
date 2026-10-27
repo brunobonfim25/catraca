@@ -80,6 +80,9 @@ def main():
     modo = os.environ.get("MODO", "unico")
     db.init(os.environ["DATABASE_URL"], 1, 4)
     db.gucs = {"nexosix.outbox": "on"} if modo in ("nuvem", "local") else {}
+    # Marca de escola nas escritas do worker (o site faz isso pela sessão). Sem ela a exclusão
+    # LGPD das fotos saía da nuvem sem escola e o PC da escola nunca apagava a foto.
+    db.gucs_fn = [lambda: {"nexosix.unidade": db.contexto.unidade_id} if getattr(db.contexto, "unidade_id", None) else {}]
     if modo == "local":
         db.contexto.unidade_id = int(os.environ.get("UNIDADE_ID", "0") or 0) or None
     intervalo = int(os.environ.get("WORKER_INTERVALO_SEG", "3" if modo == "local" else "5"))

@@ -30,13 +30,15 @@ def _criar_pessoa(unidade_id, tipo, nome, documento=None):
 
 
 def criar_aluno(unidade_id, nome, turma_id, matricula=None, saida_autonoma=None, documento=None):
-    pessoa_id = _criar_pessoa(unidade_id, "aluno", nome, documento)
-    aluno_id = db.execute(
-        "INSERT INTO alunos (pessoa_id, turma_id, matricula, saida_autonoma) VALUES (%s,%s,%s,%s) RETURNING id",
-        (pessoa_id, turma_id, matricula or None, saida_autonoma), returning=True,
-    )["id"]
-    auditar("criar", "aluno", aluno_id, depois={"nome": nome, "turma_id": turma_id}, unidade_id=unidade_id)
-    dispositivos.enfileirar_pessoa(pessoa_id, unidade_id, com_foto=False)
+    # Uma transação só: pessoa "aluno" sem a linha em alunos (sem turma) saía livre na catraca
+    with db.lote():
+        pessoa_id = _criar_pessoa(unidade_id, "aluno", nome, documento)
+        aluno_id = db.execute(
+            "INSERT INTO alunos (pessoa_id, turma_id, matricula, saida_autonoma) VALUES (%s,%s,%s,%s) RETURNING id",
+            (pessoa_id, turma_id, matricula or None, saida_autonoma), returning=True,
+        )["id"]
+        auditar("criar", "aluno", aluno_id, depois={"nome": nome, "turma_id": turma_id}, unidade_id=unidade_id)
+        dispositivos.enfileirar_pessoa(pessoa_id, unidade_id, com_foto=False)
     return pessoa_id, aluno_id
 
 
@@ -100,6 +102,14 @@ def criar_visitante(unidade_id, nome, documento=None):
 
 
 def vincular(aluno_id, responsavel_id, parentesco=None, regra="sempre", dias_semana=None):
+    # aluno e responsável da mesma escola (antes um "responsável" da escola A recebia os avisos
+    # de uma criança da escola B)
+    mesma = db.query(
+        "SELECT pa.unidade_id = pr.unidade_id AS ok FROM alunos a JOIN pessoas pa ON pa.id = a.pessoa_id, "
+        "responsaveis r JOIN pessoas pr ON pr.id = r.pessoa_id WHERE a.id = %s AND r.id = %s", (aluno_id, responsavel_id), one=True,
+    )
+    if not mesma or not mesma["ok"]:
+        raise ValueError("aluno e responsável precisam ser da mesma escola")
     n = db.query("SELECT count(*) AS n FROM aluno_responsavel WHERE aluno_id = %s", (aluno_id,), one=True)["n"]
     ja = db.query("SELECT 1 FROM aluno_responsavel WHERE aluno_id = %s AND responsavel_id = %s", (aluno_id, responsavel_id), one=True)
     if not ja and n >= MAX_RESPONSAVEIS:
@@ -151,6 +161,8 @@ def bloquear(pessoa_id, bloquear=True):
     p = db.query("SELECT status, unidade_id FROM pessoas WHERE id = %s", (pessoa_id,), one=True)
     db.execute("UPDATE pessoas SET status = %s, atualizado_em = now() WHERE id = %s", (novo, pessoa_id))
     auditar("bloquear" if bloquear else "desbloquear", "pessoa", pessoa_id, antes={"status": p["status"]}, depois={"status": novo})
+    if bloquear:
+        _encerrar_esperas(pessoa_id)  # bloqueado na hora da retirada: a espera aberta não vale mais
     # Bloqueio tem que chegar na catraca (Standalone decide sozinha): tira as regras lá.
     for d in dispositivos.listar(p["unidade_id"]):
         dispositivos.enfileirar(d["id"], "set_rules", pessoa_id)
@@ -161,8 +173,16 @@ def desligar(pessoa_id):
     p = db.query("SELECT status, unidade_id FROM pessoas WHERE id = %s", (pessoa_id,), one=True)
     db.execute("UPDATE pessoas SET status = 'desligado', desligado_em = now(), atualizado_em = now() WHERE id = %s", (pessoa_id,))
     db.execute("DELETE FROM presenca WHERE pessoa_id = %s", (pessoa_id,))
+    _encerrar_esperas(pessoa_id)
+    # desligado não recebe mais aviso nem pode reativar pelo link antigo
+    db.execute("UPDATE responsaveis SET telegram_chat_id = NULL, telegram_token = NULL, telegram_chat_pendente = NULL WHERE pessoa_id = %s", (pessoa_id,))
     auditar("desligar", "pessoa", pessoa_id, antes={"status": p["status"]}, depois={"status": "desligado"})
     dispositivos.enfileirar_remocao(pessoa_id, p["unidade_id"])
+
+
+def _encerrar_esperas(pessoa_id):
+    db.execute("UPDATE responsavel_em_espera SET expira_em = now() WHERE consumido_em IS NULL AND expira_em > now() "
+               "AND responsavel_id = (SELECT id FROM responsaveis WHERE pessoa_id = %s)", (pessoa_id,))
 
 
 def apagar_dados_biometricos(pessoa_id):
@@ -235,8 +255,12 @@ def registrar_consentimento(pessoa_id, assinado_por, assinado_em, arquivo_nome=N
         (pessoa_id, assinado_por, assinado_em, arquivo_nome, psycopg_bytes(arquivo) if arquivo else None, observacao,
          escopo, aceito, canal, responsavel_id, texto),
     )
+    unidade = db.query("SELECT unidade_id FROM pessoas WHERE id = %s", (pessoa_id,), one=True)
+    # com a escola sempre: pelo webhook do Telegram não há escola na sessão, e o registro sem
+    # escola aparecia na auditoria de todas as redes
     auditar("consentimento", "pessoa", pessoa_id, depois={"assinado_por": assinado_por, "assinado_em": str(assinado_em),
-                                                          "escopo": escopo, "aceito": aceito, "canal": canal})
+                                                          "escopo": escopo, "aceito": aceito, "canal": canal},
+            unidade_id=unidade and unidade["unidade_id"])
 
 
 # Consentimento de foto válido: um aceite sem recusa MAIS NOVA da mesma fonte (o mesmo
