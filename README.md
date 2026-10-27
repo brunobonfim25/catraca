@@ -66,22 +66,22 @@ fala HTTP na porta 80; a Cloudflare fala HTTPS com o Railway); na configuração
 roteadores bloqueiam respostas DNS com IP privado). **[HW]** validar na catraca: nome em
 `monitor.hostname`/`devices.ip`, HTTP pela internet e cache de DNS.
 
-## Agente na escola (Windows, PowerShell como administrador)
+## Agente na escola (Windows) — instalador de dois cliques
 
-1. Instale Python 3.12, PostgreSQL 16 (banco `nexosix`) e [NSSM](https://nssm.cc) em `C:\nexosix\nssm.exe`.
-2. Dê **IP fixo** ao PC (a catraca liga nele).
-3. ```powershell
-   git clone https://github.com/brunobonfim25/catraca C:\nexosix\app
-   cd C:\nexosix\app
-   .\deploy\windows\instalar.ps1 -UnidadeId 1
-   ```
-   O script cria o `.env` (edite `DATABASE_URL`, `NUVEM_URL`, `ESPELHO_TOKEN`, `BASE_URL=http://<IP>:8000`),
-   migra, reserva a faixa de ids, registra os serviços **NexosixAgente** e **NexosixWorker**
-   (sobem com o Windows, antes do login), abre a porta 8000 e agenda o backup diário.
-4. O worker baixa o cadastro da unidade na primeira rodada. Status: `http://localhost:8000/agente`.
-5. Na nuvem: Catracas → cadastrar com o IP do iDFace primário → **Testar conexão** →
+1. No painel da nuvem: Unidades → Config da unidade → **Gerar token do agente** → **Baixar
+   instalar-agente.cmd**. O arquivo já carrega o token e o id da unidade.
+2. No PC da escola (IP fixo; Windows 10/11; pode ser por acesso remoto): dois cliques no `.cmd`.
+   Ele pede administrador e instala tudo sozinho: Python 3.12, PostgreSQL 16, o agente
+   (`C:\nexosix\app`), banco, `.env`, serviços **NexosixAgente** e **NexosixWorker** (NSSM, ou
+   tarefas agendadas se o NSSM estiver fora do ar), firewall (porta 80), backup diário e
+   desliga a suspensão do PC. Primeira vez: 10–20 min. Rodar de novo = atualizar o agente.
+3. Em ~1 min a unidade aparece como "agente visto" no painel. Status local: `http://<IP>/agente`.
+4. Na nuvem: Catracas → cadastrar com o IP do iDFace primário → **Testar conexão** →
    **Configurar Monitor** → (depois) **Mudar para Pro**. O agente executa e o resultado aparece no painel.
-6. O PC fica ligado (ou liga antes da primeira entrada).
+
+Alternativa manual: `deploy/windows/instalar.ps1 -UnidadeId 1` com Python/PostgreSQL/NSSM já
+instalados. O instalador servido pela nuvem é `deploy/windows/instalador.ps1` com os
+placeholders preenchidos (`/instalador/<token>.ps1` e `.cmd`).
 
 Linux (mini PC Ubuntu): `deploy/linux/` (systemd web + worker, `backup.sh`).
 

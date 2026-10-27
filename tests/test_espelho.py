@@ -157,3 +157,21 @@ def test_configurar_local_reserva_faixa_de_ids(app, seed):
     assert pid > 30_000_000
     r = runner.invoke(args=["token-espelho", "--unidade-id", str(seed["unidade"]["id"])])
     assert "ESPELHO_TOKEN=" in r.output
+
+
+def test_instalador_personalizado_so_com_token(app, seed):
+    nuvem = create_app(NuvemConfig)
+    nuvem.config["BASE_URL"] = "https://nuvem.exemplo"
+    c = nuvem.test_client()
+    assert c.get("/instalador/nada.ps1").status_code == 403
+    db.execute("""UPDATE unidades SET config = config || '{"espelho_token": "tok-inst"}' WHERE id = %s""", (seed["unidade"]["id"],))
+    ps1 = c.get("/instalador/tok-inst.ps1")
+    assert ps1.status_code == 200
+    corpo = ps1.get_data(as_text=True)
+    assert '$TOKEN       = "tok-inst"' in corpo and '$NUVEM_URL   = "https://nuvem.exemplo"' in corpo and f'$UNIDADE_ID  = "{seed["unidade"]["id"]}"' in corpo
+    assert not any(ph in corpo for ph in ("__NUVEM_URL__", "__TOKEN__", "__UNIDADE_ID__", "__UNIDADE_NOME__"))  # nenhum placeholder sobrou
+    cmd = c.get("/instalador/tok-inst.cmd")
+    assert cmd.status_code == 200 and "attachment" in cmd.headers["Content-Disposition"]
+    assert "https://nuvem.exemplo/instalador/tok-inst.ps1" in cmd.get_data(as_text=True)
+    assert app.test_client().get("/instalador/tok-inst.ps1").status_code == 404  # só a nuvem serve
+    db.gucs, db.contexto.unidade_id = {}, None

@@ -1,7 +1,8 @@
 """Endpoints da sincronização (servidos pela NUVEM) e a página de status do AGENTE."""
 import logging
+import os
 
-from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request
+from flask import Blueprint, Response, abort, current_app, jsonify, redirect, render_template, request
 
 from .. import db
 from ..auth.rbac import login_obrigatorio
@@ -71,6 +72,39 @@ def ping(token):
 def status():
     rows = db.query("SELECT id, nome, config->>'agente_visto_em' AS visto_em, config->>'agente_erro' AS erro, config->'agente' AS agente FROM unidades ORDER BY nome")
     return jsonify([dict(r) for r in rows])
+
+
+# ---------------------------------------------------------------- instalador do agente (servido pela nuvem)
+
+_INSTALADOR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "deploy", "windows", "instalador.ps1")
+
+
+@bp.get("/instalador/<token>.ps1")
+def instalador_ps1(token):
+    """PowerShell com os dados da unidade embutidos. O token é a credencial do agente: quem
+    tem o link instala o agente desta unidade."""
+    unidade = _unidade_ou_403(token)
+    with open(_INSTALADOR, encoding="utf-8") as f:
+        corpo = f.read()
+    corpo = (corpo.replace("__NUVEM_URL__", current_app.config["BASE_URL"]).replace("__TOKEN__", token)
+             .replace("__UNIDADE_ID__", str(unidade["id"])).replace("__UNIDADE_NOME__", unidade["nome"].replace('"', "")))
+    return Response(corpo, content_type="text/plain; charset=utf-8")
+
+
+@bp.get("/instalador/<token>.cmd")
+def instalador_cmd(token):
+    """Arquivo de dois cliques: pede elevação e roda o .ps1 acima."""
+    unidade = _unidade_ou_403(token)
+    url = f"{current_app.config['BASE_URL']}/instalador/{token}.ps1"
+    nome = "".join(c for c in unidade["nome"] if c.isalnum() or c in "-_") or "unidade"
+    corpo = (
+        "@echo off\r\n"
+        f"title Instalador do agente Nexosix - {unidade['nome']}\r\n"
+        "net session >nul 2>&1 || (echo Pedindo permissao de administrador... & powershell -NoProfile -Command \"Start-Process -FilePath '%~f0' -Verb RunAs\" & exit /b)\r\n"
+        f"powershell -NoProfile -ExecutionPolicy Bypass -Command \"[Net.ServicePointManager]::SecurityProtocol='Tls12'; $s = (Invoke-WebRequest -UseBasicParsing '{url}').Content; Set-Content -Path $env:TEMP\\nexosix-instalador.ps1 -Value $s -Encoding UTF8; & $env:TEMP\\nexosix-instalador.ps1\"\r\n"
+        "echo.\r\npause\r\n"
+    )
+    return Response(corpo, content_type="application/octet-stream", headers={"Content-Disposition": f"attachment; filename=instalar-agente-{nome}.cmd"})
 
 
 # ---------------------------------------------------------------- agente (MODO=local)

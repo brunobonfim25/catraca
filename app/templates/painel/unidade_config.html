@@ -21,7 +21,18 @@
 <div class="card col-lg-6 mt-4"><div class="card-body">
   <h6>Agente da escola</h6>
   <p class="small mb-2">Unidade <b>{{ un.id }}</b> (use em <code>UNIDADE_ID</code> no .env do agente). {% if un.config.get('espelho_token') %}Token já gerado{% if un.config.get('agente_visto_em') %}; agente visto em {{ un.config.agente_visto_em[:16]|replace('T',' ') }} UTC{% else %}; agente ainda não se conectou{% endif %}.{% else %}Nenhum token ainda.{% endif %}</p>
-  <form method="post" action="{{ url_for('painel.token_agente', unidade_id=un.id) }}" onsubmit="return confirm('Gerar novo token? O agente atual para de sincronizar até receber o novo.')"><button class="btn btn-sm btn-outline-primary">{{ 'Gerar novo token' if un.config.get('espelho_token') else 'Gerar token do agente' }}</button></form>
+  {% if un.config.get('espelho_token') and modo == 'nuvem' %}
+  <div class="border rounded p-2 mb-2 bg-light">
+    <b>Instalar o agente no PC da escola</b> (Windows, qualquer técnico, pode ser por acesso remoto):
+    <ol class="mb-1 small">
+      <li><a href="{{ url_for('espelho.instalador_cmd', token=un.config.espelho_token) }}">Baixar <b>instalar-agente.cmd</b></a> e abrir com dois cliques no PC da escola (ele pede administrador).</li>
+      <li>Esperar terminar (10–20 min na primeira vez: baixa Python, PostgreSQL e o agente). Esta tela passa a mostrar "agente visto".</li>
+      <li>Depois, em Catracas: cadastrar a catraca com o IP dela → Testar conexão → Configurar Monitor.</li>
+    </ol>
+    <small class="text-muted">Rodar o mesmo arquivo de novo atualiza o agente. O arquivo contém o token desta unidade: não compartilhe fora da escola. Ou, no PowerShell como administrador: <code>irm {{ url_for('espelho.instalador_ps1', token=un.config.espelho_token, _external=True) }} | iex</code></small>
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('painel.token_agente', unidade_id=un.id) }}" onsubmit="return confirm('Gerar novo token? O agente atual para de sincronizar até receber o novo (reinstale com o novo .cmd).')"><button class="btn btn-sm btn-outline-primary">{{ 'Gerar novo token' if un.config.get('espelho_token') else 'Gerar token do agente' }}</button></form>
 </div></div>
 {% endif %}
 {% endblock %}
