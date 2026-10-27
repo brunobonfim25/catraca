@@ -17,4 +17,11 @@
     <small class="text-muted">A catraca aponta para este nome. Normalmente resolve para o IP do agente na escola; se o agente ficar mudo por 2 min, a nuvem troca o DNS para si mesma e assume a catraca; quando o agente volta, devolve. Requer Cloudflare configurada na nuvem.</small></div>
   <button class="btn btn-primary">Salvar</button>
 </form>
+{% if tem_permissao('gerir_dispositivos') %}
+<div class="card col-lg-6 mt-4"><div class="card-body">
+  <h6>Agente da escola</h6>
+  <p class="small mb-2">Unidade <b>{{ un.id }}</b> (use em <code>UNIDADE_ID</code> no .env do agente). {% if un.config.get('espelho_token') %}Token já gerado{% if un.config.get('agente_visto_em') %}; agente visto em {{ un.config.agente_visto_em[:16]|replace('T',' ') }} UTC{% else %}; agente ainda não se conectou{% endif %}.{% else %}Nenhum token ainda.{% endif %}</p>
+  <form method="post" action="{{ url_for('painel.token_agente', unidade_id=un.id) }}" onsubmit="return confirm('Gerar novo token? O agente atual para de sincronizar até receber o novo.')"><button class="btn btn-sm btn-outline-primary">{{ 'Gerar novo token' if un.config.get('espelho_token') else 'Gerar token do agente' }}</button></form>
+</div></div>
+{% endif %}
 {% endblock %}

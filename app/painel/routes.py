@@ -252,6 +252,22 @@ def unidade_config(unidade_id):
     return render_template("painel/unidade_config.html", un=un)
 
 
+@bp.post("/unidades/<int:unidade_id>/token-agente")
+@exige("gerir_dispositivos")
+def token_agente(unidade_id):
+    """Gera (ou troca) o token que o agente da escola usa. Aparece uma vez só."""
+    import secrets
+
+    un = unidade_atual_ou_403()
+    if un["id"] != unidade_id:
+        abort(404)
+    token = secrets.token_urlsafe(24)
+    db.execute("UPDATE unidades SET config = config || %s WHERE id = %s", (json.dumps({"espelho_token": token}), unidade_id), outbox=False)
+    auditar("token_agente", "unidade", unidade_id)
+    flash(f"Token do agente (copie agora, não aparece de novo): ESPELHO_TOKEN={token}", "warning")
+    return redirect(url_for("painel.unidade_config", unidade_id=unidade_id))
+
+
 @bp.get("/turmas")
 @exige("ver_presenca")
 def turmas():
