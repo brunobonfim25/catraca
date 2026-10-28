@@ -75,6 +75,19 @@ DNS local com o nome → IP do PC: sem ela, se a internet cair, a catraca não r
 fica sem servidor. **[HW]** validar na catraca: nome em `monitor.hostname`/`devices.ip`, HTTP
 pela internet e cache de DNS.
 
+## Backup
+
+- **Railway** (Postgres → aba Backups → Daily, Weekly, Monthly): cópia dentro do Railway;
+  some se o volume for apagado.
+- **Cópia semanal fora do Railway** (`app/backup.py`): o worker da nuvem gera o banco inteiro,
+  criptografa (AES-256, senha `BACKUP_SENHA`) e manda pelo bot para `BACKUP_TELEGRAM_CHAT`
+  (ou `ALERTA_TELEGRAM_CHAT`) em partes de até 45 MB. Atrasou ou falhou → alerta.
+  Na hora: `flask --app wsgi backup-agora` (ou `--pasta C:\backup` para salvar local).
+- **Restaurar**: baixe todas as partes do Telegram para uma pasta, aponte `DATABASE_URL` para
+  um banco **vazio** e rode `flask --app wsgi restaurar-backup C:\backup\nexosix-backup-*.parte*`
+  (pede a senha). Ele migra até a versão do backup, carrega os dados e aplica as migrations
+  mais novas.
+
 ## Agente na escola (Windows) — instalador de dois cliques
 
 1. No painel da nuvem (logado, perfil que configura a escola): Unidades → Config da unidade →

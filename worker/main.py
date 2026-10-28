@@ -197,6 +197,10 @@ def main():
         log.error("uma tarefa do agente parou; saindo pro serviço (NSSM/systemd) reiniciar")
         raise SystemExit(1)
     if modo == "nuvem":
+        from app import backup
+
+        # cópia semanal criptografada fora do Railway (em thread própria: leva ~1 min)
+        _laco("backup", 600, backup.talvez_enviar, None)
         # Revisão (A9): o vigia da redundância ficava no mesmo laço do envio; no pico das 7h,
         # 2 mil mensagens atrasavam a troca de DNS de uma escola com o servidor caído.
         _laco("vigia", 30, vigia, None)

@@ -109,6 +109,36 @@ def registrar_comandos(app):
             raise click.ClickException(f"unidade {unidade_id} não existe na nuvem")
         click.echo(f"ESPELHO_TOKEN={token}")
 
+    @app.cli.command("backup-agora")
+    @click.option("--pasta", default=None, help="salvar as partes nesta pasta em vez de mandar pelo Telegram")
+    def backup_agora(pasta):
+        """Cópia criptografada do banco: manda pro Telegram (BACKUP_TELEGRAM_CHAT) ou salva em --pasta."""
+        import os
+
+        from . import backup
+
+        if pasta:
+            senha = os.environ.get("BACKUP_SENHA") or click.prompt("Senha do backup (12+ caracteres)", hide_input=True, confirmation_prompt=True)
+            os.makedirs(pasta, exist_ok=True)
+            resumo, partes = backup.gerar_partes(pasta, senha)
+            click.echo(f"{len(partes)} parte(s) em {pasta} — versão {resumo['versao']}")
+        else:
+            n, total = backup.enviar_agora()
+            click.echo(f"enviado: {n} parte(s), {total / 1e6:.1f} MB")
+
+    @app.cli.command("restaurar-backup")
+    @click.argument("partes", nargs=-1, required=True)
+    @click.option("--forcar", is_flag=True, help="restaurar mesmo com cadastro no banco (apaga o que houver)")
+    def restaurar_backup(partes, forcar):
+        """Restaura as partes (em ordem: .parte01, .parte02…) no banco do DATABASE_URL."""
+        from . import backup
+
+        senha = click.prompt("Senha do backup", hide_input=True)
+        try:
+            backup.restaurar(sorted(partes), senha, log_fn=click.echo, forcar=forcar)
+        except backup.BackupErro as e:
+            raise click.ClickException(str(e))
+
     @app.cli.command("telegram-webhook")
     def telegram_webhook():
         """Registra BASE_URL/api/telegram/webhook no Telegram."""

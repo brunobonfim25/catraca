@@ -51,6 +51,13 @@ def problemas():
     n = db.query("SELECT count(*) AS n FROM fila_notificacao WHERE status = 'erro' AND criado_em > now() - interval '1 hour'", one=True)["n"]
     if n >= 10:
         out["telegram"] = f"{n} avisos aos pais falharam na última hora"
+    from . import backup
+
+    if all(backup.configuracao()):
+        u = backup.ultimo()
+        erro = u and (u["valor"] or {}).get("erro")
+        if not u or erro or (datetime.now(timezone.utc) - u["atualizado_em"]).days >= backup.INTERVALO_DIAS + 1:
+            out["backup"] = f"Cópia semanal do banco não saiu{': ' + erro[:120] if erro else ''}"
     for q in db.query("SELECT unidade_id, count(*) AS n FROM espelho_quarentena GROUP BY unidade_id"):
         out[f"quarentena:{q['unidade_id']}"] = f"{q['n']} alteração(ões) da escola {q['unidade_id']} em quarentena na sincronização"
     return out

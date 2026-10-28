@@ -231,7 +231,11 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   em `seguranca.SEM_CSRF`.
 - **Variáveis novas na nuvem**: `FAILOVER_DOMINIO` (ex.: `nexosix.com.br`, quando houver
   domínio), `FAILOVER_VOLTA_SEG` (120), `ALERTA_TELEGRAM_CHAT` (chat do Bruno no bot, para
-  os alertas). `SECRET_KEY` fraca impede a nuvem de subir.
+  os alertas; `/meuid` no bot mostra o número), `BACKUP_SENHA` (cópia semanal criptografada
+  do banco pelo Telegram, `app/backup.py`; restaurar com `flask restaurar-backup`).
+  `SECRET_KEY` fraca impede a nuvem de subir.
+- **Backup** (28/10): banco tem ~220 MB. Agendamento de backup do Railway (Postgres →
+  Backups) precisa ser ligado pela tela — pela API não gravou.
 - **Pendentes**: planilha de alunos da escola (mandar o modelo); conta Brevo para o convite
   por e-mail; PC chegar e aparecer como "agente visto"; domínio + Cloudflare (redundância
   por DNS) + DNS local no roteador da escola; catraca chegar (roteiro em

@@ -177,7 +177,7 @@ def listar_migrations(diretorio=_MIGRATIONS_DIR):
 _TRAVA_MIGRATIONS = 7342001
 
 
-def migrar(diretorio=_MIGRATIONS_DIR, log=print):
+def migrar(diretorio=_MIGRATIONS_DIR, log=print, ate=None):
     """Aplica os SQL numerados ainda não registrados em schema_migrations. Cada arquivo
     roda numa transação própria: se um falhar, os anteriores ficam e o erro aparece.
 
@@ -196,6 +196,8 @@ def migrar(diretorio=_MIGRATIONS_DIR, log=print):
             aplicadas = {r["versao"] for r in cur.fetchall()}
             conn.commit()
             for nome, caminho in listar_migrations(diretorio):
+                if ate and nome > ate:  # restaurar backup: só até a versão dele
+                    break
                 if nome in aplicadas:
                     continue
                 with open(caminho, encoding="utf-8") as f:

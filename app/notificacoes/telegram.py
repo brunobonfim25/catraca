@@ -373,6 +373,9 @@ def processar_update(update):
                         "reply_markup": TECLADO_TELEFONE}
         # link da escola (u<id>), link vencido ou /start seco: acha pelo telefone
         return {"texto": "Para ativar os avisos de entrada e saída, toque no botão abaixo e compartilhe o telefone que está no cadastro da escola.", "reply_markup": TECLADO_TELEFONE}
+    if texto.split("@")[0] == "/meuid":
+        # para a Nexosix configurar onde chegam os alertas e a cópia do banco
+        return {"texto": f"O número deste chat é {chat['id']}.", "reply_markup": TECLADO_REMOVER}
     if texto.split("@")[0] in ("/parar", "/stop", "/sair"):
         return {"texto": parar(chat["id"]), "reply_markup": TECLADO_REMOVER}
     if texto.startswith("/"):
