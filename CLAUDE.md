@@ -234,6 +234,10 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   os alertas; `/meuid` no bot mostra o número), `BACKUP_SENHA` (cópia semanal criptografada
   do banco pelo Telegram, `app/backup.py`; restaurar com `flask restaurar-backup`).
   `SECRET_KEY` fraca impede a nuvem de subir.
+- **Monitoramento** (28/10): tela Monitor (superadmin) + incidentes (`incidentes`, migration
+  013) com repetição a cada 15 min até alguém **Assumir** (botão no Telegram ou na tela).
+  `ALERTA_TELEGRAM_CHAT` = grupo de operação da Nexosix (no web e no worker); webhook do
+  Railway com `RAILWAY_WEBHOOK_TOKEN`; vigia externo (UptimeRobot) em `/health` e `/health/worker`.
 - **Backup** (28/10): banco tem ~220 MB. Agendamento de backup do Railway (Postgres →
   Backups) precisa ser ligado pela tela — pela API não gravou.
 - **Pendentes**: planilha de alunos da escola (mandar o modelo); conta Brevo para o convite

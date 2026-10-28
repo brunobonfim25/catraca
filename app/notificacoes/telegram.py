@@ -326,6 +326,18 @@ def processar_update(update):
     """Webhook: /start <token individual>, /start u<unidade> (link da escola), contato
     compartilhado ou botão da autorização. Devolve {"texto", "reply_markup", "callback"?} ou None."""
     cq = update.get("callback_query")
+    if cq and str(cq.get("data") or "").startswith("inc:"):
+        # botão "Assumir" dos alertas da Nexosix (no grupo de operação; quem clicou fica registrado)
+        from .. import alertas
+
+        chat = ((cq.get("message") or {}).get("chat") or {})
+        de = cq.get("from") or {}
+        quem = de.get("first_name") or de.get("username") or str(de.get("id"))
+        aviso = alertas.responder_botao(chat.get("id"), cq["data"][4:], quem)
+        resp = {"texto": None, "callback": cq.get("id"), "aviso": aviso}
+        if aviso.startswith("Assumido"):
+            resp.update({"texto": f"🙋 {aviso}", "mensagem": (cq.get("message") or {}).get("message_id"), "chat": chat.get("id")})
+        return resp
     if cq:
         chat = ((cq.get("message") or {}).get("chat") or {})
         # só em conversa privada: o chat é a própria pessoa que apertou

@@ -57,6 +57,7 @@
     {% if usuario.perfil == 'superadmin' or (not usuario.unidade_id and tem_permissao('configurar_escola')) %}
     <div class="grupo">{{ 'Nexosix' if usuario.perfil == 'superadmin' else 'Rede' }}</div>
     {{ item('Clientes' if usuario.perfil == 'superadmin' else 'Todas as escolas', url_for('painel.rede'), ep == 'painel.rede') }}
+    {% if usuario.perfil == 'superadmin' %}{{ item('Monitor', url_for('painel.monitor'), ep == 'painel.monitor') }}{% endif %}
     {{ item('Escolas', url_for('painel.unidades'), ep == 'painel.unidades') }}
     {% endif %}
   </aside>

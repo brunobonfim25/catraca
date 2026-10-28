@@ -78,14 +78,14 @@ def test_O2_alertas_comecam_e_terminam(seed, monkeypatch):
     db.execute("""UPDATE unidades SET config = config || '{"espelho_token": "t", "agente_visto_em": "2026-01-01T10:00:00+00:00"}' WHERE id = %s""", (uid,))
     enviados = []
     monkeypatch.setenv("ALERTA_TELEGRAM_CHAT", "42")
-    msgs = alertas.verificar(enviar=lambda chat, texto: enviados.append((chat, texto)))
+    msgs = alertas.verificar(enviar=lambda chat, texto, **k: enviados.append((chat, texto)))
     assert any("sem sinal" in m for m in msgs) and enviados[0][0] == "42"
-    assert alertas.verificar(enviar=lambda *a: enviados.append(a)) == []  # não repete
+    assert alertas.verificar(enviar=lambda *a, **k: enviados.append(a)) == []  # não repete
     from datetime import datetime, timezone
 
     db.execute("UPDATE unidades SET config = config || jsonb_build_object('agente_visto_em', %s::text) WHERE id = %s",
                (datetime.now(timezone.utc).isoformat(), uid))
-    assert any(m.startswith("✅ Resolvido") for m in alertas.verificar(enviar=lambda *a: None))
+    assert any(m.startswith("✅ Resolvido") for m in alertas.verificar(enviar=lambda *a, **k: None))
 
 
 def test_O2_saude_do_worker(app):

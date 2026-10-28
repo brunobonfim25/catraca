@@ -12,7 +12,7 @@ import secrets
 from flask import abort, request, session
 
 # Quem chama sem navegador: catraca, agente da escola, Telegram. Têm autenticação própria.
-SEM_CSRF = ("/api/notifications/", "/api/catraca/", "/api/espelho/", "/api/telegram/webhook")
+SEM_CSRF = ("/api/notifications/", "/api/catraca/", "/api/espelho/", "/api/telegram/webhook", "/api/railway/webhook")
 CHAVES_FRACAS = {"", "dev-insegura", "teste", "troque-esta-chave", "changeme"}
 
 

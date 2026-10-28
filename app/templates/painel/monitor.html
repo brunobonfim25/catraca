@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block titulo %}Monitor — Nexosix Acesso{% endblock %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h3 class="mb-0">Monitor</h3>
+    <small class="text-muted">Todos os serviços, ao vivo (atualiza a cada 5 s). Atualizado às <span id="relogio">—</span>.</small>
+  </div>
+  <form method="post" action="{{ url_for('painel.monitor_testar') }}"><button class="btn btn-sm btn-outline-secondary">Testar alerta no Telegram</button></form>
+</div>
+{% if not chat_alerta %}
+<div class="alert alert-warning">Os alertas no Telegram estão <b>desligados</b>: defina <code>ALERTA_TELEGRAM_CHAT</code> no worker e no web (mande <code>/meuid</code> no grupo de operação com o bot).</div>
+{% endif %}
+
+<div id="abertos" class="mb-3"></div>
+
+<h6 class="text-muted text-uppercase small">Nuvem</h6>
+<div class="row g-2 mb-4" id="nuvem"></div>
+
+<h6 class="text-muted text-uppercase small">Escolas</h6>
+<div class="table-responsive mb-4">
+  <table class="table table-sm align-middle">
+    <thead><tr><th>Escola</th><th>Servidor da escola</th><th>Catracas</th><th>Sincronização</th><th>Último acesso</th></tr></thead>
+    <tbody id="escolas"></tbody>
+  </table>
+</div>
+
+<h6 class="text-muted text-uppercase small">Incidentes recentes</h6>
+<div class="table-responsive">
+  <table class="table table-sm">
+    <thead><tr><th>Problema</th><th>Escola</th><th>Duração</th><th>Assumido por</th></tr></thead>
+    <tbody id="recentes"></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ha = s => s == null ? 'nunca' : (s < 60 ? `${s} s` : (s < 3600 ? `${Math.floor(s/60)} min` : `${Math.floor(s/3600)} h`));
+const bola = (ok, aviso) => ok === true ? '<span class="text-success">●</span>' : (aviso ? '<span class="text-warning">●</span>' : '<span class="text-danger">●</span>');
+function tile(titulo, ok, linha1, linha2, aviso) {
+  const cor = ok === true ? 'border-success' : (aviso ? 'border-warning' : 'border-danger');
+  return `<div class="col-6 col-md-4 col-xl-2"><div class="card h-100 border-2 ${cor}"><div class="card-body p-2">
+    <div class="small text-muted">${bola(ok, aviso)} ${titulo}</div><div class="fw-bold">${linha1}</div><div class="small text-muted">${linha2 || ''}</div></div></div></div>`;
+}
+async function atualizar() {
+  let r;
+  try { r = await fetch("{{ url_for('painel.monitor_estado') }}", {credentials: 'same-origin'}); } catch (e) { return; }
+  if (!r.ok) return;
+  const d = await r.json();
+  marcarAtualizado();
+  document.getElementById('relogio').textContent = new Date().toLocaleTimeString('pt-BR');
+
+  const ab = d.abertos;
+  document.getElementById('abertos').innerHTML = ab.length ? ab.map(i => `
+    <div class="alert ${i.gravidade === 'critico' ? 'alert-danger' : 'alert-warning'} d-flex justify-content-between align-items-center py-2 mb-2">
+      <div><b>${i.gravidade === 'critico' ? '🚨' : '⚠️'} ${esc(i.texto)}</b><br>
+        <small>há ${i.ha}${i.escola ? ' · ' + esc(i.escola) : ''} · ${i.assumido_por ? '🙋 assumido por ' + esc(i.assumido_por) : (i.gravidade === 'critico' ? 'ninguém assumiu (' + i.avisos + ' aviso(s) no Telegram)' : '')}</small></div>
+      <div class="text-nowrap">
+        ${i.assumido_por ? '' : `<form method="post" action="/painel/monitor/${i.id}/assumir" class="d-inline"><button class="btn btn-sm btn-dark">Assumir</button></form>`}
+        <form method="post" action="/painel/monitor/${i.id}/encerrar" class="d-inline" onsubmit="return confirm('Encerrar à mão? Se o problema continuar, ele reabre na próxima verificação.')"><button class="btn btn-sm btn-outline-dark">Encerrar</button></form>
+      </div>
+    </div>`).join('') : '<div class="alert alert-success py-2">✅ Tudo funcionando — nenhum incidente aberto.</div>';
+
+  const n = d.nuvem, tg = n.telegram || {}, av = n.avisos || {};
+  document.getElementById('nuvem').innerHTML = [
+    tile('Site', n.site_ok !== false, n.site_ok !== false ? 'no ar' : 'fora', 'conferido pelo worker'),
+    tile('Worker', n.worker_ok, n.worker_ok ? 'trabalhando' : 'PARADO', 'sinal há ' + ha(n.worker_seg)),
+    tile('Banco', n.banco_ms < 500, n.banco_ms + ' ms', 'tempo de resposta', n.banco_ms < 2000),
+    tile('Telegram', tg.ok !== false && !tg.ultimo_erro, tg.ok === false ? 'sem resposta' : (tg.ultimo_erro ? 'com erro' : 'ok'), esc(tg.ultimo_erro || (tg.pendentes ? tg.pendentes + ' pendente(s)' : 'webhook ok')), tg.ok !== false),
+    tile('Avisos aos pais', !av.erros_1h && av.pendentes < 50, (av.enviados_1h || 0) + ' na última hora', (av.pendentes || 0) + ' na fila · ' + (av.erros_1h || 0) + ' erro(s)', !av.erros_1h),
+    tile('Cópia do banco', n.backup_configurado && !n.backup_erro && !!n.backup_em, n.backup_configurado ? (n.backup_em ? n.backup_em.slice(0, 10) : 'ainda não saiu') : 'não configurada', esc(n.backup_erro || 'semanal, criptografada'), true),
+  ].join('');
+
+  document.getElementById('escolas').innerHTML = d.escolas.map(e => {
+    const agOk = !e.tem_agente ? null : (e.agente_seg != null && e.agente_seg <= 120 && e.web_ok !== false);
+    const agente = !e.tem_agente ? '<span class="text-muted">não instalado</span>'
+      : `${bola(agOk)} sinal há ${ha(e.agente_seg)}${e.web_ok === false ? ' · <b class="text-danger">site fora</b>' : ''}${e.failover ? ' · <b class="text-danger">nuvem assumiu</b>' : ''}`
+        + `<br><small class="text-muted">${esc(e.ip || '')}${e.desvio != null && Math.abs(e.desvio) > 60 ? ' · relógio ' + e.desvio + ' s' : ''}</small>`;
+    const cats = e.catracas.length ? e.catracas.map(c => `${bola(c.status === 'online', c.status === 'desconhecido')} ${esc(c.nome)} <small class="text-muted">${esc(c.status)}${c.modo === 'pro' ? ' · Pro' : ''} · ${ha(c.contato_seg)}</small>${c.fila ? ` <span class="badge bg-secondary">${c.fila} na fila</span>` : ''}${c.erros ? ` <span class="badge bg-danger">${c.erros} erro(s)</span>` : ''}`).join('<br>') : '<span class="text-muted">nenhuma</span>';
+    const sinc = !e.tem_agente ? '—' : `${e.outbox ?? '?'} a subir${e.quarentena ? ` · <b class="text-danger">${e.quarentena} em quarentena</b>` : ''}`;
+    return `<tr><td><b>${esc(e.nome)}</b></td><td>${agente}</td><td>${cats}</td><td>${sinc}</td><td>${e.ultimo_evento_seg == null ? '<span class="text-muted">—</span>' : 'há ' + ha(e.ultimo_evento_seg)}</td></tr>`;
+  }).join('');
+
+  document.getElementById('recentes').innerHTML = d.recentes.map(i => `<tr><td>${esc(i.texto)}</td><td>${esc(i.escola || '')}</td><td>${i.duracao}</td><td>${esc(i.assumido_por || '—')}</td></tr>`).join('') || '<tr><td colspan="4" class="text-muted">nenhum</td></tr>';
+}
+atualizar(); setInterval(atualizar, 5000);
+</script>
+{% endblock %}

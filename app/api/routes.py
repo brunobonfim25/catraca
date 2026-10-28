@@ -6,6 +6,7 @@ URL do servidor online. Tudo que chega aqui é dado externo: validado e logado, 
 """
 import hmac
 import logging
+import os
 
 from flask import Blueprint, abort, current_app, g, jsonify, request
 
@@ -137,6 +138,25 @@ def online_outros(token, outro):
     # Enterprise (new_card, new_biometric_*…) não é usado: responde negado pra não travar a catraca
     _checar_token(token)
     return jsonify({"result": {"event": 6, "message": "Modo não suportado"}})
+
+
+# ---------------------------------------------------------------- Railway (deploy falhou/caiu)
+
+@bp.post("/railway/webhook")
+def railway_webhook():
+    """Railway avisa quando um deploy falha ou um serviço cai (o worker caído não consegue
+    avisar sozinho). Token na URL porque o webhook do Railway não manda cabeçalho próprio."""
+    from .. import alertas
+
+    esperado = os.environ.get("RAILWAY_WEBHOOK_TOKEN", "")
+    if not esperado or not hmac.compare_digest(esperado, request.args.get("token", "")):
+        abort(403)
+    payload = request.get_json(silent=True) or {}
+    log.info("railway webhook: %s", str(payload)[:500])
+    resultado = alertas.railway_evento(payload)
+    if resultado == "aberto":
+        alertas.verificar()  # avisa já, sem esperar a próxima volta do vigia
+    return jsonify({"ok": True, "resultado": resultado})
 
 
 # ---------------------------------------------------------------- Painel (polling 5 s)

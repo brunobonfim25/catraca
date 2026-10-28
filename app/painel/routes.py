@@ -34,6 +34,71 @@ def _periodo():
 _FAIXA = "e.ocorrido_em >= (%s::date::timestamp AT TIME ZONE %s) AND e.ocorrido_em < ((%s::date + 1)::timestamp AT TIME ZONE %s)"
 
 
+def _so_nexosix():
+    if not g.usuario or g.usuario["perfil"] != "superadmin":
+        abort(403)
+
+
+@bp.get("/painel/monitor")
+@login_obrigatorio
+def monitor():
+    """Monitoramento em tempo real de todos os serviços (só a Nexosix)."""
+    _so_nexosix()
+    import os
+
+    return render_template("painel/monitor.html", chat_alerta=bool(os.environ.get("ALERTA_TELEGRAM_CHAT")))
+
+
+@bp.get("/painel/monitor/estado")
+@login_obrigatorio
+def monitor_estado():
+    from flask import jsonify
+
+    from .. import alertas
+
+    from flask import current_app
+
+    _so_nexosix()
+    return jsonify(alertas.estado(current_app.config.get("MODO", "nuvem")))
+
+
+@bp.post("/painel/monitor/testar")
+@login_obrigatorio
+def monitor_testar():
+    """Manda uma mensagem de teste para o chat dos alertas (confere a configuração)."""
+    import os
+
+    from ..notificacoes import telegram
+
+    _so_nexosix()
+    chat = os.environ.get("ALERTA_TELEGRAM_CHAT", "")
+    if not chat:
+        flash("ALERTA_TELEGRAM_CHAT não está definido no serviço web.", "danger")
+    else:
+        try:
+            telegram.enviar(chat, f"✅ Teste de alerta da Nexosix — enviado por {g.usuario['nome']}. Se você está lendo, os alertas chegam aqui.")
+            flash("Mensagem de teste enviada. Confira no Telegram.", "success")
+        except Exception as e:  # noqa: BLE001
+            flash(f"O Telegram recusou: {e}", "danger")
+    return redirect(url_for("painel.monitor"))
+
+
+@bp.post("/painel/monitor/<int:inc_id>/<acao>")
+@login_obrigatorio
+def monitor_acao(inc_id, acao):
+    from .. import alertas
+
+    _so_nexosix()
+    if acao == "assumir":
+        alertas.reconhecer(inc_id, g.usuario["nome"])
+    elif acao == "encerrar":
+        db.execute("UPDATE incidentes SET fim = now() WHERE id = %s AND fim IS NULL", (inc_id,), outbox=False)
+    else:
+        abort(404)
+    auditar(f"incidente_{acao}", "incidente", inc_id)
+    return redirect(url_for("painel.monitor"))
+
+
 @bp.get("/painel/rede")
 @login_obrigatorio
 def rede():

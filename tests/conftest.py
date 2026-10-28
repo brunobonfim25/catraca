@@ -89,6 +89,13 @@ def outbox_ligado(ctx):
 
 
 @pytest.fixture(autouse=True)
+def sem_segredos_do_ambiente(monkeypatch):
+    """Os testes não podem depender de variáveis da máquina (nem chamar o Telegram de verdade)."""
+    for v in ("BACKUP_SENHA", "BACKUP_TELEGRAM_CHAT", "ALERTA_TELEGRAM_CHAT", "RAILWAY_WEBHOOK_TOKEN", "TELEGRAM_BOT_TOKEN", "BASE_URL"):
+        monkeypatch.delenv(v, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def horario_simulado(monkeypatch):
     """Os testes simulam a catraca às 7h, 17h etc. (hoje_as), não na hora real em que rodam:
     sem isso a tolerância do relógio e o "aviso atrasado" mudariam o resultado conforme o

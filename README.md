@@ -75,6 +75,23 @@ DNS local com o nome → IP do PC: sem ela, se a internet cair, a catraca não r
 fica sem servidor. **[HW]** validar na catraca: nome em `monitor.hostname`/`devices.ip`, HTTP
 pela internet e cache de DNS.
 
+## Monitoramento
+
+- **Tela Monitor** (menu Nexosix › Monitor, só superadmin): site, worker, banco, Telegram,
+  avisos aos pais, cópia do banco e, por escola, servidor da escola, catracas, fila e último
+  acesso — atualiza a cada 5 s. Incidentes abertos no topo, com **Assumir** e **Encerrar**.
+- **Incidentes** (`app/alertas.py`, vigia do worker a cada 30 s): escola sem sinal há 2 min,
+  site do servidor da escola fora, catraca offline/contingência há 3 min, avisos aos pais
+  parados há 5 min ou falhando, Telegram com erro, site da nuvem fora (2 falhas seguidas),
+  deploy que falhou/caiu (webhook do Railway em `/api/railway/webhook?token=…`), cópia do
+  banco atrasada, quarentena, servidor desatualizado, relógio errado. O crítico chega no
+  grupo do Telegram (`ALERTA_TELEGRAM_CHAT`, no web e no worker) com o botão **Assumir** e
+  é repetido a cada 15 min até alguém assumir; ao resolver, avisa a duração.
+- **Vigia de fora** (a nuvem inteira fora não consegue se avisar): crie uma conta grátis no
+  UptimeRobot e dois monitores HTTP de 5 min: `https://<site>/health` e
+  `https://<site>/health/worker` (este responde 503 se o worker parou). Alerta por e-mail e
+  pelo app do UptimeRobot no celular.
+
 ## Backup
 
 - **Railway** (Postgres → aba Backups → Daily, Weekly, Monthly): cópia dentro do Railway;
