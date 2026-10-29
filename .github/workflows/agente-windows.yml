@@ -17,7 +17,14 @@ on:
       - 'requirements.txt'
       - 'serve.py'
       - 'wsgi.py'
+  # Publicar sem linha de comando: Actions › este workflow › Run workflow › versão (ex.: 1.0.1).
+  # Monta, testa de ponta a ponta e só então cria a versão em Releases.
   workflow_dispatch:
+    inputs:
+      versao:
+        description: 'Versão a publicar (ex.: 1.0.1). Vazio = só montar e testar.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -39,8 +46,13 @@ jobs:
 
       - name: Versão
         shell: powershell
+        env:
+          VERSAO_PEDIDA: ${{ inputs.versao }}
         run: |
-          if ("$env:GITHUB_REF" -like 'refs/tags/agente-v*') { $v = "$env:GITHUB_REF_NAME".Substring(8) } else { $v = "0.0.$env:GITHUB_RUN_NUMBER" }
+          if ("$env:GITHUB_REF" -like 'refs/tags/agente-v*') { $v = "$env:GITHUB_REF_NAME".Substring(8) }
+          elseif ($env:VERSAO_PEDIDA -match '^\d+\.\d+\.\d+$') { $v = $env:VERSAO_PEDIDA }
+          elseif ($env:VERSAO_PEDIDA) { throw "versão inválida: use o formato 1.2.3" }
+          else { $v = "0.0.$env:GITHUB_RUN_NUMBER" }
           $partes = ($v -replace '[^0-9.]', '').Split('.') | Where-Object { $_ -ne '' }
           while ($partes.Count -lt 4) { $partes += '0' }
           "AGENTE_VERSAO=$v" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
@@ -84,10 +96,10 @@ jobs:
           if-no-files-found: ignore
 
       - name: Publicar a versão
-        if: startsWith(github.ref, 'refs/tags/agente-v')
+        if: startsWith(github.ref, 'refs/tags/agente-v') || (github.event_name == 'workflow_dispatch' && inputs.versao != '')
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $notas = "Instalador do servidor da escola (Windows 10/11, 64 bits). Testado de ponta a ponta no Windows Server 2025 (mesma base do Windows 11 24H2).`n`nSHA-256: $(Get-Content dist\SHA256.txt)`n`nVersões embutidas:`n$((Get-Content build\agente\VERSAO.txt) -join "`n")"
-          gh release create "$env:GITHUB_REF_NAME" dist\NexosixAgente-Setup.exe dist\SHA256.txt --title "Servidor da escola $env:AGENTE_VERSAO" --notes $notas --latest
+          gh release create "agente-v$env:AGENTE_VERSAO" dist\NexosixAgente-Setup.exe dist\SHA256.txt --target "$env:GITHUB_SHA" --title "Servidor da escola $env:AGENTE_VERSAO" --notes $notas --latest

@@ -89,7 +89,9 @@ expostos a quem usa o PC da recepção).
    baixado, nuvem vê o agente, `.env` trancado, backup como SYSTEM, serviço que cai e volta),
    atualização (mesmo token e dados), desinstalar mantendo dados + reinstalar sem código, e
    desinstalar apagando tudo.
-4. Tag `agente-vX.Y.Z` publica o `.exe` em Releases; o painel baixa de
+4. **Publicar uma versão:** GitHub › Actions › "Instalador Windows (servidor da escola)" ›
+   **Run workflow** › versão (ex.: `1.0.1`). Ele monta, testa tudo de novo e só então cria a versão
+   em Releases (uma tag `agente-vX.Y.Z` enviada pelo git faz o mesmo). O painel baixa a mais nova, de
    `releases/latest/download/NexosixAgente-Setup.exe` (ou de `AGENTE_EXE_URL`, se definida na nuvem
    — necessário se o repositório virar privado).
 
@@ -97,7 +99,7 @@ Arquivos: `comum.ps1` (caminhos e funções), `configurar.ps1` (etapas), `remove
 (parar/desinstalar), `backup.ps1`, `ci_nuvem.py` (só o teste). Os `.ps1` e o `.iss` ficam em
 UTF-8 com BOM e CRLF (`.gitattributes`): o PowerShell 5.1 do Windows lê sem BOM como ANSI.
 
-**Testado no Windows Server 2025 do GitHub (mesma base do Windows 11 24H2).** Ainda não testado:
+**Testado no Windows Server 2025 do GitHub (mesma base do Windows 11 24H2): todas as checagens acima passam (instalação em ~27 s).** Ainda não testado:
 Windows 11 Home de fábrica com antivírus de terceiros, PC atrás de proxy, e a catraca real
 chamando o PC pela rede (ver `integrations/controlid/README.md`).
 
