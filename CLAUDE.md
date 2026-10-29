@@ -212,8 +212,10 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   WinSW — nada é baixado na escola. A escola vem do **código de instalação** (uso único, 24 h,
   painel › Escola › Servidor da escola, ou `flask codigo-instalacao`), trocado pelo token em
   `/api/espelho/ativar` (token novo a cada ativação: o PC antigo para). Montado e testado de
-  ponta a ponta no Windows Server 2025 pelo GitHub Actions (`agente-windows.yml`); tag
-  `agente-vX.Y.Z` publica em Releases e o painel baixa de lá (`AGENTE_EXE_URL` se o repo virar
+  ponta a ponta no Windows Server 2025 pelo GitHub Actions (`agente-windows.yml`: código errado,
+  instalar ~27 s, catraca autenticada, cadastro baixado, cair e voltar, atualizar, desinstalar
+  mantendo/apagando dados — tudo passa); publicar = Actions › Run workflow com a versão (ou tag
+  `agente-vX.Y.Z`; o proxy da sessão do Claude não deixa enviar tag) e o painel baixa de lá (`AGENTE_EXE_URL` se o repo virar
   privado). O `.cmd` antigo e o `pacote.zip` foram removidos. Scripts do Windows: UTF-8 com BOM
   + CRLF (PowerShell 5.1), e todo programa externo via `Rodar` (stderr não vira exceção).
   Doc: `deploy/windows/agente/README.md`. Falta: certificado de assinatura de código (sem ele o
