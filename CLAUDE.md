@@ -204,8 +204,8 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   webhook registrado em `/api/telegram/webhook`. Ativação dos responsáveis já funciona
   (ficha do responsável → Ativar Telegram → QR).
 - **PC do agente** (piloto Recreio): HP EliteDesk 705 G1 Mini (AMD, 8 GB, SSD 120 GB,
-  **Windows 11**, Wi-Fi + RJ45). Usar no cabo, IP reservado no roteador, BIOS "After Power
-  Loss = Power On". CPU fora da lista oficial do Windows 11 (roda; para as próximas escolas,
+  **Windows 11**), **ligado por cabo RJ45** (Wi-Fi desligado). IP reservado no roteador pelo
+  MAC da placa de cabo, BIOS "After Power Loss = Power On". CPU fora da lista oficial do Windows 11 (roda; para as próximas escolas,
   mini PC com CPU suportada). Checklist em `deploy/windows/agente/README.md`.
 - **Instalador do agente** (29/10): `NexosixAgente-Setup.exe` único (Inno Setup), igual para
   todas as escolas, com Python 3.13 embutido, PostgreSQL 16 próprio (porta 5439, só localhost) e

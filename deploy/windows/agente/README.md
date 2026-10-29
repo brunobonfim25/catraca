@@ -31,12 +31,14 @@ sincronizar na hora (não disputa a catraca com o novo). Depois desinstale o ant
 
 ## Antes de instalar: o PC da escola
 
-Piloto: **HP EliteDesk 705 G1 Mini (AMD), 8 GB, SSD 120 GB, Windows 11, Wi-Fi + cabo**. Folga de
+Piloto: **HP EliteDesk 705 G1 Mini (AMD), 8 GB, SSD 120 GB, Windows 11, ligado por cabo RJ45**. Folga de
 sobra (o servidor usa ~300 MB de RAM e ~600 MB de disco + o banco). O que importa nele:
 
 - [ ] **Cabo de rede**, na mesma rede da catraca. No Wi-Fi a conexão cai, o IP muda e alguns
       roteadores isolam o Wi-Fi do cabo (a catraca não acha o PC). O instalador avisa se estiver no Wi-Fi.
-- [ ] **IP reservado no roteador** (reserva DHCP) para este PC. O instalador mostra o IP no fim.
+- [ ] **Wi-Fi desligado** nesse PC: com cabo e Wi-Fi juntos ele fica com dois IPs e confunde a
+      configuração da catraca e do roteador.
+- [ ] **IP reservado no roteador** (reserva DHCP) pelo MAC da **placa de cabo**. O instalador mostra o IP no fim.
 - [ ] **Voltar a ligar sozinho depois de queda de energia**: na BIOS (F10 ao ligar) › Advanced ›
       Power-On Options › *After Power Loss* = **Power On**. Sem isso, faltou luz = catraca sem servidor
       até alguém apertar o botão.
