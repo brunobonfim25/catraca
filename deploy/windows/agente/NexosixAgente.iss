@@ -351,8 +351,11 @@ begin
       WizardForm.StatusLabel.Caption := TextoEtapa(I);
       WizardForm.FilenameLabel.Caption := '';
       Parametros := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + Raiz + '\instalador\configurar.ps1" -Etapa ' + NomeEtapa(I);
+      { Atualização não tem código: "-Codigo" sem valor faria o PowerShell recusar o comando inteiro }
+      if (I = 1) and (Codigo <> '') then
+        Parametros := Parametros + ' -Codigo "' + Codigo + '"';
       if I = 1 then
-        Parametros := Parametros + ' -Codigo ' + Codigo + ' -Nuvem "' + Nuvem + '"';
+        Parametros := Parametros + ' -Nuvem "' + Nuvem + '"';
       Log('Etapa ' + NomeEtapa(I));
       if not Exec(PowerShell, Parametros, Raiz + '\instalador', SW_HIDE, ewWaitUntilTerminated, R) then
       begin

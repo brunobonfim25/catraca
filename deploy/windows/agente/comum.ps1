@@ -40,6 +40,10 @@ function Rodar([string]$Exe, [string[]]$Argumentos = @(), [switch]$PodeFalhar, [
     $antes = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     $guardado = @{}
+    $codificacao = $null
+    # Programas daqui (python, psql) escrevem em UTF-8; sem isto o PowerShell lê na página de
+    # código do console e "Itaguaí" vira "Itagua├¡" no log e na tela final
+    try { $codificacao = [Console]::OutputEncoding; [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
     try {
         if ($Ambiente) { foreach ($k in $Ambiente.Keys) { $guardado[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $Ambiente[$k]) } }
         if ($Dir) { Push-Location $Dir }
@@ -48,6 +52,7 @@ function Rodar([string]$Exe, [string[]]$Argumentos = @(), [switch]$PodeFalhar, [
     } finally {
         if ($Dir) { Pop-Location }
         foreach ($k in $guardado.Keys) { [Environment]::SetEnvironmentVariable($k, $guardado[$k]) }
+        if ($codificacao) { try { [Console]::OutputEncoding = $codificacao } catch { } }
         $ErrorActionPreference = $antes
     }
     foreach ($l in $saida) { Add-Content -Path $LOG -Value "    $l" -Encoding UTF8 }
@@ -85,11 +90,15 @@ function SenhaDoBanco {
 function Psql([string]$Sql, [string]$Banco = 'postgres') {
     $antes = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
+    $codificacao = $null
+    try { $codificacao = [Console]::OutputEncoding; [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
     try {
         $env:PGPASSWORD = SenhaDoBanco
+        $env:PGCLIENTENCODING = 'UTF8'
         $saida = & (Join-Path $PGBIN 'psql.exe') -w -h 127.0.0.1 -p $PORTA_PG -U postgres -d $Banco -tAc $Sql 2>$null
     } finally {
-        Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
+        Remove-Item Env:\PGPASSWORD, Env:\PGCLIENTENCODING -ErrorAction SilentlyContinue
+        if ($codificacao) { try { [Console]::OutputEncoding = $codificacao } catch { } }
         $ErrorActionPreference = $antes
     }
     return "$saida".Trim()
