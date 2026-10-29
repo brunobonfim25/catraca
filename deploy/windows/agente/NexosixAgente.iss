@@ -406,6 +406,7 @@ begin
     WizardForm.FinishedHeadingLabel.Caption := 'Servidor da escola instalado';
     WizardForm.FinishedLabel.Caption := 'Escola: ' + Escola + #13#10#13#10 +
       'Os serviços iniciam sozinhos com o Windows. Em instantes o painel mostra "Conectado".' + #13#10#13#10 +
+      'Reserve no roteador o IP deste computador (' + LerMensagem(Raiz + '\logs\ip.txt') + ') para ele não mudar.' + #13#10#13#10 +
       'Próximo passo, no painel: Configuração › Catraca › cadastrar a catraca com o IP dela › Testar conexão › Configurar Monitor.';
     if Aviso then
       WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 + 'Atenção: ' + MensagemFinal;

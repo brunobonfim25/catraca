@@ -203,8 +203,10 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   transferir para um número da Nexosix — BotFather permite). Token no Railway (web e worker),
   webhook registrado em `/api/telegram/webhook`. Ativação dos responsáveis já funciona
   (ficha do responsável → Ativar Telegram → QR).
-- **PC do agente**: HP EliteDesk 705 G1 DM (A8, 8 GB, SSD 120, Win 10 Pro, RJ45) comprado
-  para teste.
+- **PC do agente** (piloto Recreio): HP EliteDesk 705 G1 Mini (AMD, 8 GB, SSD 120 GB,
+  **Windows 11**, Wi-Fi + RJ45). Usar no cabo, IP reservado no roteador, BIOS "After Power
+  Loss = Power On". CPU fora da lista oficial do Windows 11 (roda; para as próximas escolas,
+  mini PC com CPU suportada). Checklist em `deploy/windows/agente/README.md`.
 - **Instalador do agente** (29/10): `NexosixAgente-Setup.exe` único (Inno Setup), igual para
   todas as escolas, com Python 3.13 embutido, PostgreSQL 16 próprio (porta 5439, só localhost) e
   WinSW — nada é baixado na escola. A escola vem do **código de instalação** (uso único, 24 h,

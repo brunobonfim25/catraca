@@ -29,6 +29,27 @@ Silencioso: `C:\nexosix\unins000.exe /VERYSILENT /APAGARDADOS`.
 **Trocar de PC:** instale no PC novo com um código novo. O token muda e o PC antigo para de
 sincronizar na hora (não disputa a catraca com o novo). Depois desinstale o antigo apagando os dados.
 
+## Antes de instalar: o PC da escola
+
+Piloto: **HP EliteDesk 705 G1 Mini (AMD), 8 GB, SSD 120 GB, Windows 11, Wi-Fi + cabo**. Folga de
+sobra (o servidor usa ~300 MB de RAM e ~600 MB de disco + o banco). O que importa nele:
+
+- [ ] **Cabo de rede**, na mesma rede da catraca. No Wi-Fi a conexão cai, o IP muda e alguns
+      roteadores isolam o Wi-Fi do cabo (a catraca não acha o PC). O instalador avisa se estiver no Wi-Fi.
+- [ ] **IP reservado no roteador** (reserva DHCP) para este PC. O instalador mostra o IP no fim.
+- [ ] **Voltar a ligar sozinho depois de queda de energia**: na BIOS (F10 ao ligar) › Advanced ›
+      Power-On Options › *After Power Loss* = **Power On**. Sem isso, faltou luz = catraca sem servidor
+      até alguém apertar o botão.
+- [ ] **No-break** pequeno no PC e no roteador, se der (a catraca tem a contingência, mas sem
+      servidor a saída "só com responsável" passa pela recepção).
+- [ ] Windows atualizado e com **data e hora certas** (o instalador liga a sincronização de hora).
+- [ ] O EliteDesk G1 é de 2014: o processador não está na lista oficial do Windows 11 (roda, mas
+      a Microsoft pode deixar de mandar atualizações grandes). Para o piloto, ok; para as próximas
+      escolas, preferir um mini PC com processador suportado.
+
+O instalador já faz sozinho: tira a suspensão e a hibernação na tomada, desliga a economia de
+energia das placas de rede e deixa o Wi-Fi em desempenho máximo.
+
 ## O que fica no PC
 
 | Onde | O quê |
@@ -52,6 +73,7 @@ expostos a quem usa o PC da recepção).
 | Não consegui falar com a nuvem | Internet do PC; proxy/firewall da escola liberando HTTPS |
 | A porta 80 já está em uso por … | Desligue o programa citado (IIS, outro servidor web) ou use outro PC |
 | Instalado, mas o cadastro ainda não chegou | Internet lenta: ele continua tentando; acompanhe em `http://localhost/agente` |
+| Este computador está no Wi-Fi | Ligue no cabo de rede da mesma rede da catraca e rode o instalador de novo (só confere) |
 
 ## Como é montado e testado (Nexosix)
 

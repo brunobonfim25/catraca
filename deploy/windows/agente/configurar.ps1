@@ -65,6 +65,15 @@ switch ($Etapa) {
     # PC da catraca não pode dormir
     Rodar 'powercfg.exe' @('/change', 'standby-timeout-ac', '0') -PodeFalhar | Out-Null
     Rodar 'powercfg.exe' @('/change', 'hibernate-timeout-ac', '0') -PodeFalhar | Out-Null
+    # Placa de rede "economizando energia" cai e a catraca perde o servidor (padrão em muitos PCs,
+    # principalmente no Wi-Fi). -NoRestart: reiniciar a placa agora derrubaria a ativação logo depois.
+    foreach ($a in (Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' })) {
+        try { Disable-NetAdapterPowerManagement -Name $a.Name -NoRestart -ErrorAction Stop; Log "economia de energia da placa desligada: $($a.Name)" }
+        catch { Log "  placa $($a.Name): $($_.Exception.Message)" }
+    }
+    # Wi-Fi em desempenho máximo (vale se o PC ficar no Wi-Fi)
+    Rodar 'powercfg.exe' @('/setacvalueindex', 'SCHEME_CURRENT', '19cbb8fa-5279-450e-9fac-8a3d5fedd0c1', '12bbebe6-58d6-4636-95bb-3217ef867c1a', '0') -PodeFalhar | Out-Null
+    Rodar 'powercfg.exe' @('/setactive', 'SCHEME_CURRENT') -PodeFalhar | Out-Null
 
     # A catraca chama este PC na porta 80. Se outro programa já usa a porta, o serviço não sobe.
     $uso = Get-NetTCPConnection -LocalPort $PORTA -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -259,12 +268,25 @@ switch ($Etapa) {
     }
     $escola = Psql "SELECT nome FROM unidades WHERE id = $((LerEnv)['UNIDADE_ID'])" 'nexosix'
     if ($escola) { Set-Content -Path (Join-Path $LOGS 'escola.txt') -Value $escola -Encoding Default }
+    $avisos = @()
     if ($carga -ne 't') {
-        $m = 'Instalado, mas o cadastro da escola ainda não chegou da nuvem (internet lenta ou fora?). O servidor continua tentando sozinho; acompanhe em http://localhost/agente.'
+        $avisos += 'O cadastro da escola ainda não chegou da nuvem (internet lenta ou fora?); o servidor continua tentando sozinho, acompanhe em http://localhost/agente.'
+    } else { Log "cadastro da escola $escola baixado da nuvem" }
+
+    # Por onde este PC sai para a rede: a catraca precisa achá-lo sempre no mesmo endereço
+    $rota = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
+    $placa = if ($rota) { Get-NetAdapter -InterfaceIndex $rota.ifIndex -ErrorAction SilentlyContinue }
+    $ip = if ($rota) { (Get-NetIPAddress -InterfaceIndex $rota.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1).IPAddress }
+    if ($ip) { Set-Content -Path (Join-Path $LOGS 'ip.txt') -Value $ip -Encoding ASCII; Log "IP deste PC: $ip ($($placa.Name))" }
+    if ($placa -and ("$($placa.PhysicalMediaType)" -match '802\.11|Wireless' -or $placa.InterfaceDescription -match 'Wi-?Fi|Wireless|WLAN')) {
+        # Wi-Fi: cai, troca de IP e alguns roteadores isolam os aparelhos do Wi-Fi dos que estão no cabo
+        $avisos += 'Este computador está no Wi-Fi. Ligue-o no cabo de rede, na mesma rede da catraca: no Wi-Fi a conexão cai e alguns roteadores não deixam a catraca alcançá-lo.'
+    }
+    if ($avisos) {
+        $m = $avisos -join ' '
         Log "AVISO: $m"
         GravarErro $m
         exit 2
     }
-    Log "cadastro da escola $escola baixado da nuvem"
 } }
 }
