@@ -84,7 +84,7 @@ function ServicosRodando { foreach ($n in 'NexosixBanco', 'NexosixAgente', 'Nexo
 function NenhumServico { -not (Get-Service 'NexosixBanco', 'NexosixAgente', 'NexosixWorker' -ErrorAction SilentlyContinue) }
 function CargaFeita {
     $env:PGPASSWORD = ((Get-Content "$RAIZ\app\.env" | Where-Object { $_ -match '^DATABASE_URL=' }) -replace '^DATABASE_URL=postgresql://postgres:([^@]+)@.*$', '$1')
-    try { $r = Nativo (Join-Path $RAIZ 'pgsql\bin\psql.exe') @('-h', '127.0.0.1', '-p', '5439', '-U', 'postgres', '-d', 'nexosix', '-tAc', 'SELECT carga_em IS NOT NULL FROM espelho_estado WHERE id = 1') -Saida } finally { Remove-Item Env:\PGPASSWORD }
+    try { $r = Nativo (Join-Path $RAIZ 'pgsql\bin\psql.exe') @('-w', '-h', '127.0.0.1', '-p', '5439', '-U', 'postgres', '-d', 'nexosix', '-tAc', 'SELECT carga_em IS NOT NULL FROM espelho_estado WHERE id = 1') -Saida } finally { Remove-Item Env:\PGPASSWORD }
     return $r -eq 't'
 }
 function ConferirInstalado([string]$Fase) {
@@ -113,7 +113,7 @@ try {
     if (-not $env:RUNNER_TEMP) { $pgNuvem = Join-Path $env:TEMP 'nuvem-pg' }
     Nativo (Join-Path $PGBIN 'initdb.exe') @('-D', $pgNuvem, '-U', 'postgres', '-A', 'trust', '-E', 'UTF8', '--locale=C')
     Nativo (Join-Path $PGBIN 'pg_ctl.exe') @('-D', $pgNuvem, '-o', '-p 5433 -c listen_addresses=127.0.0.1', '-l', "$Saida\nuvem-pg.log", '-w', 'start')
-    Nativo (Join-Path $PGBIN 'psql.exe') @('-h', '127.0.0.1', '-p', '5433', '-U', 'postgres', '-c', 'CREATE DATABASE nuvem')
+    Nativo (Join-Path $PGBIN 'psql.exe') @('-w', '-h', '127.0.0.1', '-p', '5433', '-U', 'postgres', '-c', 'CREATE DATABASE nuvem')
     $venv = Join-Path $env:TEMP 'venv-nuvem'
     Nativo 'python' @('-m', 'venv', $venv)
     $vpy = Join-Path $venv 'Scripts\python.exe'

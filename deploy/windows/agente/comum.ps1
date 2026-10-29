@@ -87,7 +87,7 @@ function Psql([string]$Sql, [string]$Banco = 'postgres') {
     $ErrorActionPreference = 'Continue'
     try {
         $env:PGPASSWORD = SenhaDoBanco
-        $saida = & (Join-Path $PGBIN 'psql.exe') -h 127.0.0.1 -p $PORTA_PG -U postgres -d $Banco -tAc $Sql 2>$null
+        $saida = & (Join-Path $PGBIN 'psql.exe') -w -h 127.0.0.1 -p $PORTA_PG -U postgres -d $Banco -tAc $Sql 2>$null
     } finally {
         Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
         $ErrorActionPreference = $antes

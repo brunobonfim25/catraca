@@ -7,7 +7,7 @@ $script:EtapaLog = 'backup'
 try {
     New-Item -ItemType Directory -Force -Path $BACKUPS | Out-Null
     $arquivo = Join-Path $BACKUPS ('nexosix-{0:yyyyMMdd-HHmm}.dump' -f (Get-Date))
-    Rodar (Join-Path $PGBIN 'pg_dump.exe') @('-h', '127.0.0.1', '-p', "$PORTA_PG", '-U', 'postgres', '-d', 'nexosix', '--format=custom', "--file=$arquivo") -Ambiente @{ PGPASSWORD = (SenhaDoBanco) } | Out-Null
+    Rodar (Join-Path $PGBIN 'pg_dump.exe') @('-w', '-h', '127.0.0.1', '-p', "$PORTA_PG", '-U', 'postgres', '-d', 'nexosix', '--format=custom', "--file=$arquivo") -Ambiente @{ PGPASSWORD = (SenhaDoBanco) } | Out-Null
     # Revisão (E17): só apaga os antigos se o de hoje existe e não está vazio
     if (-not (Test-Path $arquivo) -or (Get-Item $arquivo).Length -eq 0) { throw 'pg_dump não gerou o arquivo' }
     Get-ChildItem $BACKUPS -Filter 'nexosix-*.dump' | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-14) } | Remove-Item -Force

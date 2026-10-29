@@ -173,7 +173,7 @@ switch ($Etapa) {
         Start-Sleep -Seconds 1
     }
     if ((Psql "SELECT 1 FROM pg_database WHERE datname = 'nexosix'") -ne '1') {
-        Rodar (Join-Path $PGBIN 'psql.exe') @('-h', '127.0.0.1', '-p', "$PORTA_PG", '-U', 'postgres', '-d', 'postgres', '-c', 'CREATE DATABASE nexosix') -Ambiente @{ PGPASSWORD = $senha } | Out-Null
+        Rodar (Join-Path $PGBIN 'psql.exe') @('-w', '-h', '127.0.0.1', '-p', "$PORTA_PG", '-U', 'postgres', '-d', 'postgres', '-c', 'CREATE DATABASE nexosix') -Ambiente @{ PGPASSWORD = $senha } | Out-Null
         Log 'banco nexosix criado'
     }
 } }
