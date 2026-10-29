@@ -102,4 +102,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $notas = "Instalador do servidor da escola (Windows 10/11, 64 bits). Testado de ponta a ponta no Windows Server 2025 (mesma base do Windows 11 24H2).`n`nSHA-256: $(Get-Content dist\SHA256.txt)`n`nVersões embutidas:`n$((Get-Content build\agente\VERSAO.txt) -join "`n")"
-          gh release create "agente-v$env:AGENTE_VERSAO" dist\NexosixAgente-Setup.exe dist\SHA256.txt --target "$env:GITHUB_SHA" --title "Servidor da escola $env:AGENTE_VERSAO" --notes $notas --latest
+          # em arquivo UTF-8: passado como argumento, o PowerShell 5.1 estragava os acentos ("VersÃµes")
+          [IO.File]::WriteAllText("$PWD\dist\notas.md", $notas, (New-Object Text.UTF8Encoding $false))
+          gh release create "agente-v$env:AGENTE_VERSAO" dist\NexosixAgente-Setup.exe dist\SHA256.txt --target "$env:GITHUB_SHA" --title "Servidor da escola $env:AGENTE_VERSAO" --notes-file dist\notas.md --latest
