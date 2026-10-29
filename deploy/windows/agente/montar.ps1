@@ -82,7 +82,10 @@ Get-ChildItem $app -Recurse -File -Include '*.pyc', '.env' | Remove-Item -Force
 Passo "PostgreSQL $PG_VERSAO (binários)"
 $tmp = Join-Path $env:TEMP 'pgsql-extraido'
 if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
-Expand-Archive (Join-Path $cache 'pgsql.zip') $tmp -Force
+New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+# tar.exe (vem no Windows) extrai só o que interessa; o Expand-Archive do PowerShell 5.1 leva
+# dezenas de minutos no zip inteiro (milhares de arquivos do pgAdmin)
+Nativo (Join-Path $env:SystemRoot 'System32\tar.exe') @('-xf', (Join-Path $cache 'pgsql.zip'), '-C', $tmp, 'pgsql/bin', 'pgsql/lib', 'pgsql/share', 'pgsql/server_license.txt')
 $origem = Join-Path $tmp 'pgsql'
 # Só o servidor e as ferramentas de linha de comando: sem pgAdmin (centenas de MB), StackBuilder,
 # documentação, cabeçalhos de C e símbolos de depuração
@@ -90,8 +93,10 @@ foreach ($d in 'bin', 'lib', 'share') {
     Copy-Item (Join-Path $origem $d) (Join-Path $Saida "pgsql\$d") -Recurse -Force
 }
 Get-ChildItem (Join-Path $Saida 'pgsql') -Recurse -File -Include '*.pdb', '*.lib', '*.a' | Remove-Item -Force
+# StackBuilder (com a interface wx*) e programas de teste do próprio PostgreSQL também não servem aqui
+Get-ChildItem (Join-Path $Saida 'pgsql\bin\*') -File -Include 'stackbuilder.exe', 'wx*.dll', '*regress*.exe', 'isolationtester.exe', 'libpq_*.exe', 'test*.exe', 'testplug.dll' | Remove-Item -Force
 Remove-Item (Join-Path $Saida 'pgsql\share\doc') -Recurse -Force -ErrorAction SilentlyContinue
-Copy-Item (Join-Path $origem 'LICENSE') (Join-Path $Saida 'pgsql\LICENSE.txt') -ErrorAction SilentlyContinue
+Copy-Item (Join-Path $origem 'server_license.txt') (Join-Path $Saida 'pgsql\LICENSE.txt')
 
 Passo 'Serviços e scripts do instalador'
 Copy-Item (Join-Path $cache 'WinSW.exe') (Join-Path $Saida 'servicos\WinSW.exe')
