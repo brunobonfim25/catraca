@@ -48,18 +48,30 @@ function Esperar([scriptblock]$Cond, [int]$Segundos, [string]$Msg) {
 function Http([string]$Url, [string]$Metodo = 'GET') {
     try { return Invoke-WebRequest $Url -Method $Metodo -UseBasicParsing -TimeoutSec 10 } catch { if ($_.Exception.Response) { return $_.Exception.Response } ; throw }
 }
+function JanelasAbertas { Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object { "$($_.ProcessName) [$($_.Id)]: $($_.MainWindowTitle)" } }
+function EsperarProcesso($p, [int]$Minutos, [string]$Nome) {
+    # Vigia: um diálogo escondido (o que /SUPPRESSMSGBOXES não cobre) prenderia o teste até o limite do job
+    if (-not $p.WaitForExit($Minutos * 60000)) {
+        $j = (JanelasAbertas) -join ' || '
+        Get-Process | Where-Object { $_.ProcessName -like 'NexosixAgente-Setup*' -or $_.ProcessName -like '_iu*' -or $_.ProcessName -like 'unins*' } | Stop-Process -Force -ErrorAction SilentlyContinue
+        throw "$Nome não terminou em $Minutos min. Janelas abertas: $j"
+    }
+}
 function Setup([string[]]$Argumentos, [string]$Log) {
-    $todos = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$Saida\$Log") + $Argumentos
-    $p = Start-Process -FilePath $Instalador -ArgumentList $todos -Wait -PassThru
+    $todos = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$Saida\$Log`"") + $Argumentos
+    $p = Start-Process -FilePath $Instalador -ArgumentList $todos -PassThru
+    $null = $p.Handle   # PowerShell 5.1: sem pegar o handle cedo, o ExitCode vem vazio
+    EsperarProcesso $p 15 'o instalador'
     Write-Host "  instalador saiu com código $($p.ExitCode)"
     return $p.ExitCode
 }
 function Desinstalar([switch]$ApagarDados, [string]$Log) {
     $unins = Join-Path $RAIZ 'unins000.exe'
     Ok (Test-Path $unins) 'desinstalador existe'
-    $a = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$Saida\$Log")
+    $a = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$Saida\$Log`"")
     if ($ApagarDados) { $a += '/APAGARDADOS' }
-    Start-Process -FilePath $unins -ArgumentList $a -Wait | Out-Null
+    $p = Start-Process -FilePath $unins -ArgumentList $a -PassThru
+    EsperarProcesso $p 10 'o desinstalador'
     # o desinstalador do Inno se copia para a pasta temporária e o original sai na hora
     Esperar { -not (Test-Path $unins) -and -not (Get-Process | Where-Object { $_.ProcessName -like '_iu*' }) } 300 'desinstalador terminou'
 }
@@ -208,7 +220,11 @@ try {
         Write-Host "`n----- $($f.FullName)" -ForegroundColor Yellow
         Get-Content $f.FullName -Tail 60 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
     }
-    foreach ($f in 'nuvem.err.log', 'nuvem.out.log') { if (Test-Path "$Saida\$f") { Write-Host "`n----- $f"; Get-Content "$Saida\$f" -Tail 40 } }
+    foreach ($f in (Get-ChildItem $Saida -File -Filter '*.log' -ErrorAction SilentlyContinue)) {
+        Write-Host "`n----- $($f.Name)" -ForegroundColor Yellow
+        Get-Content $f.FullName -Tail 50 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+    }
+    Write-Host "`nJanelas abertas: $((JanelasAbertas) -join ' || ')"
     exit 1
 } finally {
     if ($nuvemProc) { Stop-Process -Id $nuvemProc.Id -Force -ErrorAction SilentlyContinue }

@@ -240,10 +240,14 @@ begin
   Result := True;
   if CurPageID <> PaginaCodigo.ID then
     Exit;
+  { Silencioso: o Inno também "clica Avançar" aqui. A conferência fica com a etapa ativar, que
+    tem log e código de saída — um diálogo aqui prenderia a instalação remota para sempre. }
+  if WizardSilent then
+    Exit;
   Codigo := SoCodigo(PaginaCodigo.Values[0]);
   if Length(Codigo) <> 8 then
   begin
-    MsgBox('O código tem 8 letras e números, como ABCD-EFGH.', mbError, MB_OK);
+    SuppressibleMsgBox('O código tem 8 letras e números, como ABCD-EFGH.', mbError, MB_OK, IDOK);
     Result := False;
     Exit;
   end;
@@ -257,20 +261,20 @@ begin
   if Status = 200 then
   begin
     Escola := CampoJson(Resposta, 'unidade_nome');
-    Result := MsgBox('Instalar o servidor da escola "' + Escola + '" neste computador?', mbConfirmation, MB_YESNO) = IDYES;
+    Result := SuppressibleMsgBox('Instalar o servidor da escola "' + Escola + '" neste computador?', mbConfirmation, MB_YESNO, IDYES) = IDYES;
   end
   else if Status = 0 then
   begin
-    MsgBox('Não consegui falar com a nuvem Nexosix (' + Nuvem + ').' + #13#10#13#10 +
-      'Confira a internet deste computador e tente de novo.' + #13#10#13#10 + 'Detalhe: ' + Resposta, mbError, MB_OK);
+    SuppressibleMsgBox('Não consegui falar com a nuvem Nexosix (' + Nuvem + ').' + #13#10#13#10 +
+      'Confira a internet deste computador e tente de novo.' + #13#10#13#10 + 'Detalhe: ' + Resposta, mbError, MB_OK, IDOK);
     Result := False;
   end
   else
   begin
     if CampoJson(Resposta, 'erro') <> '' then
-      MsgBox(CampoJson(Resposta, 'erro'), mbError, MB_OK)
+      SuppressibleMsgBox(CampoJson(Resposta, 'erro'), mbError, MB_OK, IDOK)
     else
-      MsgBox('A nuvem respondeu com erro ' + IntToStr(Status) + '. Tente de novo em instantes.', mbError, MB_OK);
+      SuppressibleMsgBox('A nuvem respondeu com erro ' + IntToStr(Status) + '. Tente de novo em instantes.', mbError, MB_OK, IDOK);
     Result := False;
   end;
 end;
