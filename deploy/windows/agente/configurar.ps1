@@ -81,8 +81,12 @@ switch ($Etapa) {
         $proc = Get-Process -Id $uso.OwningProcess -ErrorAction SilentlyContinue
         $nossos = @($PY.ToLower())
         if (-not ($proc -and $proc.Path -and $nossos -contains $proc.Path.ToLower())) {
-            $quem = if ($uso.OwningProcess -eq 4) { 'o Windows (IIS / HTTP.sys — veja "netsh http show servicestate")' } elseif ($proc) { "$($proc.ProcessName) (PID $($proc.Id))" } else { "PID $($uso.OwningProcess)" }
-            throw "A porta 80 deste PC já está em uso por $quem. A catraca precisa dela: desligue esse programa ou use outro PC."
+            if ($uso.OwningProcess -eq 4) {
+                # PID 4 = HTTP.sys do Windows; quem está por trás quase sempre é o IIS
+                $iis = Get-Service -Name 'W3SVC', 'WAS' -ErrorAction SilentlyContinue | Where-Object { "$($_.Status)" -eq 'Running' }
+                $quem = if ($iis) { 'IIS (Serviço de Publicação na World Wide Web, W3SVC)' } else { 'um serviço do Windows via HTTP.sys (veja "netsh http show servicestate")' }
+            } elseif ($proc) { $quem = "$($proc.ProcessName) (PID $($proc.Id))" } else { $quem = "PID $($uso.OwningProcess)" }
+            throw "A porta 80 deste PC já está em uso (quem usa: $quem). A catraca precisa dela: desative esse programa ou use outro PC."
         }
     }
     Log 'porta 80 livre'

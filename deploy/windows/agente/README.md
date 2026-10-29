@@ -73,7 +73,7 @@ expostos a quem usa o PC da recepção).
 |---|---|
 | Código inválido ou vencido | Gere outro no painel (vale 24 h e uma instalação) |
 | Não consegui falar com a nuvem | Internet do PC; proxy/firewall da escola liberando HTTPS |
-| A porta 80 já está em uso por … | Desligue o programa citado (IIS, outro servidor web) ou use outro PC |
+| A porta 80 já está em uso (quem usa: …) | Desative o programa citado. IIS: Painel de Controle › Programas › Ativar ou desativar recursos do Windows › desmarcar "Serviços de Informações da Internet". Ou use outro PC |
 | Instalado, mas o cadastro ainda não chegou | Internet lenta: ele continua tentando; acompanhe em `http://localhost/agente` |
 | Este computador está no Wi-Fi | Ligue no cabo de rede da mesma rede da catraca e rode o instalador de novo (só confere) |
 

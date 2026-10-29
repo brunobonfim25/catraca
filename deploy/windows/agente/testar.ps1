@@ -144,6 +144,14 @@ try {
         -RedirectStandardOutput "$Saida\nuvem.out.log" -RedirectStandardError "$Saida\nuvem.err.log" }
     Esperar { (Http "$NUVEM/health").StatusCode -eq 200 } 60 'nuvem de teste no ar'
 
+    Passo 'Porta 80 do Windows de teste'
+    # A imagem do GitHub vem com o IIS ocupando a porta 80 (o instalador recusa, com razão: a
+    # catraca não chegaria no servidor). Num PC de escola isso não existe; aqui desligamos.
+    foreach ($s in 'W3SVC', 'WAS', 'WMSVC') { Stop-Service -Name $s -Force -ErrorAction SilentlyContinue; Set-Service -Name $s -StartupType Disabled -ErrorAction SilentlyContinue }
+    $uso = Get-NetTCPConnection -LocalPort 80 -State Listen -ErrorAction SilentlyContinue
+    if ($uso) { Write-Host (netsh http show servicestate | Out-String) }
+    Ok (-not $uso) 'porta 80 livre para o teste'
+
     Passo '1. Código errado'
     $c = Setup @('/CODIGO=AAAA-AAAA', "/NUVEM=$NUVEM") 'setup-codigo-errado.log'
     Ok ($c -eq 10) 'instalador sai com código 10'
