@@ -120,3 +120,30 @@ def test_O11_exportar_dados_da_escola(cliente, seed):
     rec = cliente.application.test_client()
     rec.post("/login", data={"email": "recepcao@teste.com", "senha": "senha123"})
     assert rec.get(f"/unidades/{seed['unidade']['id']}/exportar.zip").status_code == 403
+
+
+def test_bootstrap_redefine_senha_do_superadmin_uma_vez(app, monkeypatch):
+    """Superadmin sem senha e sem acesso ao banco: ADMIN_REDEFINIR_SENHA no Railway resolve,
+    e deixar a variável lá não desfaz uma troca de senha feita depois."""
+    from werkzeug.security import check_password_hash, generate_password_hash
+
+    db.execute("INSERT INTO usuarios_admin (nome, email, senha_hash, perfil) VALUES ('S', 'chefe@teste.com', %s, 'superadmin')",
+               (generate_password_hash("esquecida-123"),))
+    db.execute("INSERT INTO login_falhas (chave, falhas, bloqueado_ate) VALUES ('email:chefe@teste.com', 9, now() + interval '1 hour')")
+    app.config.update(ADMIN_EMAIL="Chefe@teste.com", ADMIN_SENHA="nova-senha-123")
+    monkeypatch.setenv("ADMIN_REDEFINIR_SENHA", "1")
+    r = app.test_cli_runner().invoke(args=["bootstrap"])
+    assert "redefinida" in r.output, r.output
+    hash_ = lambda: db.query("SELECT senha_hash FROM usuarios_admin WHERE email = 'chefe@teste.com'", one=True)["senha_hash"]  # noqa: E731
+    assert check_password_hash(hash_(), "nova-senha-123")
+    assert not db.query("SELECT 1 FROM login_falhas WHERE chave = 'email:chefe@teste.com'", one=True)
+    # trocou pelo painel depois; o próximo deploy com a mesma variável não volta a senha
+    db.execute("UPDATE usuarios_admin SET senha_hash = %s WHERE email = 'chefe@teste.com'", (generate_password_hash("trocada-pelo-painel"),))
+    r = app.test_cli_runner().invoke(args=["bootstrap"])
+    assert "redefinida" not in r.output
+    assert check_password_hash(hash_(), "trocada-pelo-painel")
+    # sem a variável, nada acontece
+    monkeypatch.delenv("ADMIN_REDEFINIR_SENHA")
+    app.config.update(ADMIN_SENHA="outra-senha-999")
+    app.test_cli_runner().invoke(args=["bootstrap"])
+    assert check_password_hash(hash_(), "trocada-pelo-painel")

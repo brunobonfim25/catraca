@@ -1,4 +1,6 @@
 """Comandos `flask --app wsgi <comando>`."""
+import os
+
 import click
 from werkzeug.security import generate_password_hash
 
@@ -25,6 +27,29 @@ def registrar_comandos(app):
         )
         click.echo(f"superadmin pronto: {email}")
 
+    def _redefinir_senha_superadmin(email, senha, pedido):
+        """Superadmin esqueceu a senha e o banco da nuvem não é acessível de fora: no Railway,
+        ADMIN_SENHA = nova senha + ADMIN_REDEFINIR_SENHA = qualquer valor novo, e o próximo deploy
+        aplica. Aplica uma vez por pedido (guardado em sistema_status): deixar a variável lá não
+        desfaz uma troca de senha feita depois pelo painel."""
+        import hashlib
+        import json
+
+        marca = hashlib.sha256(f"{pedido}|{email.lower()}|{senha}".encode()).hexdigest()
+        feito = db.query("SELECT valor FROM sistema_status WHERE chave = 'admin:redefinir'", one=True)
+        if feito and (feito["valor"] or {}).get("marca") == marca:
+            return
+        n = db.execute("UPDATE usuarios_admin SET senha_hash = %s, ativo = true WHERE lower(email) = %s AND perfil = 'superadmin'",
+                       (generate_password_hash(senha), email.lower()))
+        db.execute("DELETE FROM login_falhas WHERE chave = %s", (f"email:{email.lower()}",), outbox=False)
+        db.execute("INSERT INTO sistema_status (chave, valor, atualizado_em) VALUES ('admin:redefinir', %s, now()) "
+                   "ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = now()",
+                   (json.dumps({"marca": marca}),), outbox=False)
+        from .auditoria import auditar
+
+        auditar("redefinir_senha_superadmin", "usuarios_admin", email.lower()[:120], depois={"via": "ADMIN_REDEFINIR_SENHA"})
+        click.echo(f"senha do superadmin {email} redefinida ({n} usuário)" if n else f"nenhum superadmin com o e-mail {email}")
+
     @app.cli.command("bootstrap")
     def bootstrap():
         """Primeiro deploy: migra e cria o superadmin de ADMIN_EMAIL/ADMIN_SENHA se não houver usuários."""
@@ -38,6 +63,8 @@ def registrar_comandos(app):
                 (email.lower(), generate_password_hash(senha)),
             )
             click.echo(f"superadmin criado: {email}")
+        if email and senha and os.environ.get("ADMIN_REDEFINIR_SENHA"):
+            _redefinir_senha_superadmin(email, senha, os.environ["ADMIN_REDEFINIR_SENHA"])
         if app.config.get("MODO") != "local":
             from .espelho.service import garantir_monitor_token
 
