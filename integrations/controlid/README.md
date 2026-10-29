@@ -24,6 +24,15 @@ Coluna **Hardware** fica `pendente` até alguém rodar na catraca real e anotar 
 | Modo Pro | devices + `online_client.server_id` + `general.online=1,local_identification=1` | ✅ | pendente |
 | Evento online | catraca → servidor `POST /new_user_identified.fcgi` (form-urlencoded) ← `{"result":{event,user_id,user_name,actions[],message}}` | ✅ | pendente |
 | Logs de acesso | `load_objects access_logs` com `where id > N` | ✅ | pendente |
+| Botoeira (modo online) | catraca → servidor `POST /new_rex_log.fcgi` JSON `{device_id, rex_log:{time, event:11, user_id, portal_id}}` ← vazio | ✅ | pendente |
+| Servidor vivo (contingência) | catraca → servidor `POST /device_is_alive.fcgi` JSON `{access_logs}` ← HTTP OK, a cada minuto | ✅ | pendente |
+
+Exemplos oficiais (github.com/controlid/integracao, pasta "Controle de Acesso", conferidos em 29/10):
+o "Exemplo API Monitor" e o "Servidor Online" usam exatamente os endpoints acima
+(`/api/notifications/<endpoint>`, `/new_user_identified.fcgi`, `/device_is_alive.fcgi`,
+`/new_rex_log.fcgi`). O campo `ip` do objeto `devices` aceita esquema e caminho
+(doc: `http://meuservidor.com.br/servico`), então a URL com token
+`http://<pc>/api/catraca/<token>` é suportada pela documentação.
 
 ## Fatos documentados que o código usa
 
@@ -59,7 +68,8 @@ Coluna **Hardware** fica `pendente` até alguém rodar na catraca real e anotar 
     entrada é contato seco, qual sentido cada uma das 2 botoeiras libera, nem o que vem em
     `user_id`/`portal_id`. A página de GPIO (`gpio_state.fcgi`) não lista o idBlock Next. Testar:
     (a) borne e sentido de cada botoeira pelo desenho 4.1 do guia impresso; (b) se o evento 11 chega
-    na hora pelo Monitor (`dao`) ou só na coleta; (c) se libera com o conjunto em modo Pro;
+    na hora pelo Monitor (`dao`) ou só na coleta (em modo online chega também por `new_rex_log.fcgi`;
+    os dois viram um evento só, em qualquer ordem, com janela de 10 s); (c) se libera com o conjunto em modo Pro;
     (d) apertada sem giro → vem evento 13 e/ou `EVENT_GIVE_UP`? O sistema já grava o evento
     `BOTOEIRA` (sem pessoa: não muda presença nem avisa os pais).
 

@@ -211,6 +211,22 @@ def _evento_pro_sem_log(dispositivo_id, pessoa_id, ocorrido_em, codigo):
     )
 
 
+def registrar_botoeira_online(dispositivo, quando, sentido, detalhes):
+    """Botoeira em modo online chega duas vezes: new_rex_log.fcgi e o access_log 11 (Monitor ou
+    coleta), em qualquer ordem. O access_log se junta ao evento do rex (_evento_pro_sem_log); aqui
+    é o outro lado: se o access_log já chegou, o rex não grava de novo. Dois toques em 10 s viram
+    um evento só por aqui, mas o access_log do segundo ainda grava o dele."""
+    ja = db.query(
+        "SELECT 1 FROM eventos WHERE dispositivo_id = %s AND evento_dispositivo = 11 AND pessoa_id IS NULL "
+        "AND ocorrido_em BETWEEN %s AND %s LIMIT 1",
+        (dispositivo["id"], quando - timedelta(seconds=10), quando + timedelta(seconds=10)), one=True,
+    )
+    if ja:
+        return None
+    return registrar(dispositivo["unidade_id"], tipos.BOTOEIRA, quando, dispositivo_id=dispositivo["id"], sentido=sentido,
+                     evento_dispositivo=11, detalhes=detalhes)
+
+
 # Mesmo número de registro com hora diferente disso = não é o mesmo registro: a catraca resetou
 RESET_DIFERENCA = timedelta(minutes=2)
 
@@ -247,7 +263,8 @@ def processar_access_log(dispositivo, item):
     sentido = dispositivos.sentido_do_leitor(dispositivo, portal_id=item.get("portal_id"))
     pessoa = pessoa_por_user_id(dispositivo["id"], user_id)
 
-    pendente = _evento_pro_sem_log(dispositivo["id"], pessoa["id"] if pessoa else None, ocorrido, codigo) if codigo in (6, 7) else None
+    # 11: no modo online a botoeira já chegou por new_rex_log.fcgi; sem isto virava dois eventos
+    pendente = _evento_pro_sem_log(dispositivo["id"], pessoa["id"] if pessoa else None, ocorrido, codigo) if codigo in (6, 7, 11) else None
     if pendente:
         db.execute("UPDATE eventos SET log_id_dispositivo = %s, log_epoca = %s WHERE id = %s", (log_id, int(dispositivo.get("log_epoca") or 0), pendente["id"]))
         _avancar_ultimo_log(dispositivo, log_id)

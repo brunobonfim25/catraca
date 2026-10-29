@@ -101,6 +101,16 @@ def test_contingencia_quando_servidor_some_e_volta(servidor_app, sincronizado, s
     assert simulador["estado"].modo_contingencia is False
 
 
+def test_botoeira_em_modo_online_vira_um_evento(servidor_app, sincronizado, simulador):
+    import requests
+
+    a = _configurar(servidor_app, simulador)
+    a.configurar_modo_online(f"http://127.0.0.1:{servidor_app.porta}/api/catraca/tok-teste")
+    log = requests.post(f"http://127.0.0.1:{simulador['porta']}/sim/botoeira", json={"portal_id": 2}, timeout=5).json()
+    assert _esperar(lambda: db.query("SELECT 1 FROM eventos WHERE log_id_dispositivo = %s", (log["id"],), one=True))
+    assert db.query("SELECT count(*) AS n FROM eventos WHERE tipo = %s", (tipos.BOTOEIRA,), one=True)["n"] == 1
+
+
 def test_coleta_recupera_logs_que_o_monitor_nao_entregou(sincronizado, simulador):
     # sem Monitor configurado: a catraca guarda; o worker busca por load_objects
     uid = sincronizado["user_ids"]["pedro"]

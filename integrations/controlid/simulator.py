@@ -557,7 +557,17 @@ def criar_simulador(estado=None):
 
     @app.post("/sim/botoeira")
     def sim_botoeira():
-        return jsonify(_gravar_log(event=11, user_id=0, portal_id=1))
+        portal = int((request.get_json(silent=True) or {}).get("portal_id") or 1)
+        log = _gravar_log(event=11, user_id=0, portal_id=portal)
+        servidor = estado.servidor_online_url()
+        if servidor and not estado.modo_contingencia:
+            # [DOC] em modo online a botoeira também vai por POST JSON em /new_rex_log.fcgi (resposta vazia)
+            rex = {"time": log["time"], "event": 11, "user_id": 0, "portal_id": portal}
+            try:
+                requests.post(f"{servidor}/new_rex_log.fcgi", json={"device_id": estado.device_id, "rex_log": rex}, timeout=5)
+            except requests.RequestException as e:
+                estado.monitor_falhas.append(f"rex: {e}")
+        return jsonify(log)
 
     @app.get("/sim/estado")
     def sim_estado():

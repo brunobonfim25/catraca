@@ -15,7 +15,7 @@ from ..auth.rbac import login_obrigatorio, unidade_atual_ou_403
 from ..dispositivos import service as dispositivos
 from ..eventos import service as eventos
 from ..eventos import tipos
-from ..util import formatar_hora
+from ..util import de_unix, formatar_hora
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 log = logging.getLogger(__name__)
@@ -124,12 +124,18 @@ def online_device_is_alive(token):
 
 @bp.post("/catraca/<token>/new_rex_log.fcgi")
 def online_rex(token):
+    # [DOC] botoeira em modo online: JSON {device_id, rex_log: {time, event: 11, user_id, portal_id}},
+    # resposta vazia. O mesmo acionamento também chega como access_log 11 (Monitor/coleta): os dois
+    # viram um evento só (registrar_botoeira_online), por isso a hora tem que ser a da catraca.
     _checar_token(token)
     payload = request.get_json(silent=True) or {}
     d = _da_escola_do_token(dispositivos.por_device_id(payload.get("device_id")) if payload.get("device_id") else None)
     if d:
         g.unidade_api_id = d["unidade_id"]
-        eventos.registrar(d["unidade_id"], tipos.BOTOEIRA, eventos.agora_utc(), dispositivo_id=d["id"], detalhes=payload)
+        rex = payload.get("rex_log") if isinstance(payload.get("rex_log"), dict) else {}
+        quando = de_unix(rex["time"]) if rex.get("time") else eventos.agora_utc()
+        sentido = dispositivos.sentido_do_leitor(d, portal_id=rex.get("portal_id")) if rex.get("portal_id") else None
+        eventos.registrar_botoeira_online(d, quando, sentido, payload)
     return ""
 
 

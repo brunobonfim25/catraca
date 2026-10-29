@@ -1,7 +1,7 @@
 """Ingestão pelo Monitor (dao) em Standalone: presença, atraso, espera, dedupe, Telegram."""
 from app import db
 from app.eventos import tipos
-from tests.conftest import access_log, dao, hoje_as
+from tests.conftest import access_log, dao, hoje_as, unix
 
 
 def _eventos(tipo=None):
@@ -105,6 +105,23 @@ def test_nao_identificado_e_botoeira(cliente, sincronizado):
     dao(cliente, access_log(1, 0, 1, event=3))
     dao(cliente, access_log(2, 0, 1, event=11))
     assert [e["tipo"] for e in _eventos()] == [tipos.NAO_IDENTIFICADO, tipos.BOTOEIRA]
+
+
+def test_botoeira_no_modo_online_nao_duplica(cliente, sincronizado):
+    """[DOC] em modo online a botoeira chega por new_rex_log.fcgi e de novo como access_log 11."""
+    quando = hoje_as(14, 32)
+    r = cliente.post("/api/catraca/tok-teste/new_rex_log.fcgi", json={
+        "device_id": 935107, "rex_log": {"time": unix(quando), "event": 11, "user_id": 0, "portal_id": 2}})
+    assert r.status_code == 200
+    dao(cliente, access_log(5, 0, 2, event=11, quando=quando))
+    evs = _eventos(tipos.BOTOEIRA)
+    assert len(evs) == 1 and evs[0]["log_id_dispositivo"] == 5 and evs[0]["ocorrido_em"] == quando
+    # ordem contrária: o access_log chegou primeiro
+    depois = hoje_as(15, 0)
+    dao(cliente, access_log(6, 0, 2, event=11, quando=depois))
+    cliente.post("/api/catraca/tok-teste/new_rex_log.fcgi", json={
+        "device_id": 935107, "rex_log": {"time": unix(depois), "event": 11, "user_id": 0, "portal_id": 2}})
+    assert [e["log_id_dispositivo"] for e in _eventos(tipos.BOTOEIRA)] == [5, 6]
 
 
 def test_outras_notificacoes_do_monitor(cliente, sincronizado):
