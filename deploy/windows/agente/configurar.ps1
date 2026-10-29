@@ -147,7 +147,9 @@ switch ($Etapa) {
         $pw = Join-Path $base 'pw.tmp'
         Set-Content -Path $pw -Value $senha -Encoding ASCII -NoNewline
         try {
-            Rodar (Join-Path $PGBIN 'initdb.exe') @('-D', $DADOS, '-U', 'postgres', '-E', 'UTF8', '--locale=C', '-A', 'scram-sha-256', "--pwfile=$pw")
+            # -Dir: com a permissão reduzida, a pasta atual herdada (instalador\, só administradores)
+            # fica inacessível e o initdb nem acha o postgres.exe ("The current directory is invalid")
+            Rodar (Join-Path $PGBIN 'initdb.exe') @('-D', $DADOS, '-U', 'postgres', '-E', 'UTF8', '--locale=C', '-A', 'scram-sha-256', "--pwfile=$pw") -Dir $PGBIN
         } finally { Remove-Item $pw -Force -ErrorAction SilentlyContinue }
         $conf = @(
             '', '# --- Nexosix ---'
