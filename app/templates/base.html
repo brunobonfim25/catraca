@@ -85,7 +85,7 @@
         <div class="alert alert-danger py-2"><b>Redundância ativa:</b> o servidor da escola ({{ unidade.nome }}) parou de responder e a nuvem assumiu a catraca desde {{ (unidade.config.failover.desde or '')[:16]|replace('T', ' ') }} UTC. Fotos novas e comandos ficam na fila até o servidor voltar.</div>
       {% endif %}
       {% with msgs = get_flashed_messages(with_categories=true) %}
-        {% for cat, m in msgs %}<div class="alert alert-{{ cat }} py-2">{{ m }}</div>{% endfor %}
+        {% for cat, m in msgs if cat != 'codigo' %}<div class="alert alert-{{ cat }} py-2">{{ m }}</div>{% endfor %}
       {% endwith %}
       {% block conteudo %}{% endblock %}
     </main>
@@ -94,7 +94,7 @@
 {% else %}
 <main class="container-fluid px-4">
   {% with msgs = get_flashed_messages(with_categories=true) %}
-    {% for cat, m in msgs %}<div class="alert alert-{{ cat }} py-2">{{ m }}</div>{% endfor %}
+    {% for cat, m in msgs if cat != 'codigo' %}<div class="alert alert-{{ cat }} py-2">{{ m }}</div>{% endfor %}
   {% endwith %}
   {% block conteudo_deslogado %}{{ self.conteudo() }}{% endblock %}
 </main>

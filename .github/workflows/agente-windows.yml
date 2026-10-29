@@ -1,0 +1,93 @@
+# Instalador do servidor da escola: monta, compila o .exe e testa de ponta a ponta num Windows
+# de verdade (instalar, atualizar, desinstalar, código errado). Tag agente-vX.Y.Z publica a
+# versão em Releases — é dali que o painel baixa (AGENTE_EXE_URL).
+name: Instalador Windows (servidor da escola)
+
+on:
+  push:
+    branches: [main]
+    tags: ['agente-v*']
+    paths:
+      - 'deploy/windows/agente/**'
+      - '.github/workflows/agente-windows.yml'
+      - 'app/**'
+      - 'worker/**'
+      - 'integrations/**'
+      - 'migrations/**'
+      - 'requirements.txt'
+      - 'serve.py'
+      - 'wsgi.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agente-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  instalador:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Versão
+        shell: powershell
+        run: |
+          if ("$env:GITHUB_REF" -like 'refs/tags/agente-v*') { $v = "$env:GITHUB_REF_NAME".Substring(8) } else { $v = "0.0.$env:GITHUB_RUN_NUMBER" }
+          $partes = ($v -replace '[^0-9.]', '').Split('.') | Where-Object { $_ -ne '' }
+          while ($partes.Count -lt 4) { $partes += '0' }
+          "AGENTE_VERSAO=$v" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "VERSAO_NUMERICA=$(($partes | Select-Object -First 4) -join '.')" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Montar a pasta do instalador
+        shell: powershell
+        run: .\deploy\windows\agente\montar.ps1 -Saida build\agente
+
+      - name: Compilar o .exe (Inno Setup)
+        shell: powershell
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc "/DStaging=$PWD\build\agente" "/DAppVersao=$env:AGENTE_VERSAO" "/DVersaoNumerica=$env:VERSAO_NUMERICA" deploy\windows\agente\NexosixAgente.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $exe = Get-Item dist\NexosixAgente-Setup.exe
+          $sha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$sha  NexosixAgente-Setup.exe" | Out-File dist\SHA256.txt -Encoding ascii
+          Write-Host "NexosixAgente-Setup.exe: $([int]($exe.Length / 1MB)) MB, SHA-256 $sha"
+
+      - name: Teste ponta a ponta (instalar, atualizar, desinstalar)
+        shell: powershell
+        run: .\deploy\windows\agente\testar.ps1 -Instalador dist\NexosixAgente-Setup.exe -Montado build\agente -Saida build\teste
+
+      - name: Guardar o instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexosixAgente-Setup
+          path: |
+            dist/NexosixAgente-Setup.exe
+            dist/SHA256.txt
+            build/SHA256-dependencias.txt
+
+      - name: Guardar os logs do teste
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-teste
+          path: build/teste
+          if-no-files-found: ignore
+
+      - name: Publicar a versão
+        if: startsWith(github.ref, 'refs/tags/agente-v')
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notas = "Instalador do servidor da escola (Windows 10/11, 64 bits). Testado de ponta a ponta no Windows Server 2025 (mesma base do Windows 11 24H2).`n`nSHA-256: $(Get-Content dist\SHA256.txt)`n`nVersões embutidas:`n$((Get-Content build\agente\VERSAO.txt) -join "`n")"
+          gh release create "$env:GITHUB_REF_NAME" dist\NexosixAgente-Setup.exe dist\SHA256.txt --title "Servidor da escola $env:AGENTE_VERSAO" --notes $notas --latest

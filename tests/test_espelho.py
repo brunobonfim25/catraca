@@ -298,35 +298,78 @@ def test_configurar_local_reserva_faixa_de_ids(app, seed):
     assert "ESPELHO_TOKEN=" in r.output
 
 
-def test_instalador_so_para_quem_esta_logado(app, seed):
+def test_instalador_exe_e_codigo_de_instalacao(app, seed):
+    """O .exe é o mesmo para todas as escolas; o código de uso único diz de qual escola ele é."""
     nuvem = create_app(NuvemConfig)
     nuvem.config["BASE_URL"] = "https://nuvem.exemplo"
     uid = seed["unidade"]["id"]
     anonimo = nuvem.test_client()
-    assert anonimo.get(f"/unidades/{uid}/instalador.cmd").status_code in (302, 401)
-    assert anonimo.get("/instalador/tok-inst.ps1").status_code == 404  # link público com token não existe mais
-    db.execute("""UPDATE unidades SET config = config || '{"espelho_token": "tok-inst"}' WHERE id = %s""", (uid,))
+    assert anonimo.get(f"/unidades/{uid}/instalador.exe").status_code in (302, 401)
+    assert anonimo.get(f"/unidades/{uid}/instalador.cmd").status_code == 404  # o .cmd com token dentro não existe mais
+    assert anonimo.get("/api/espelho/pacote.zip").status_code == 404
     rec = nuvem.test_client()
     rec.post("/login", data={"email": "recepcao@teste.com", "senha": "senha123"})
-    assert rec.get(f"/unidades/{uid}/instalador.cmd").status_code == 404
+    assert rec.get(f"/unidades/{uid}/instalador.exe").status_code == 404
+    assert rec.post(f"/unidades/{uid}/codigo-instalacao").status_code == 403
     c = nuvem.test_client()
     c.post("/login", data={"email": "admin@teste.com", "senha": "senha123"})
-    cmd = c.get(f"/unidades/{uid}/instalador.cmd")
-    assert cmd.status_code == 200 and "attachment" in cmd.headers["Content-Disposition"]
-    corpo = cmd.get_data(as_text=True)
-    ps1 = corpo.split("#__NEXOSIX_PS1__#\r\n", 1)[1]
-    assert '$TOKEN       = "tok-inst"' in ps1 and '$NUVEM_URL   = "https://nuvem.exemplo"' in ps1 and f'$UNIDADE_ID  = "{uid}"' in ps1
-    assert not any(ph in ps1 for ph in ("__NUVEM_URL__", "__TOKEN__", "__UNIDADE_ID__", "__UNIDADE_NOME__"))  # nenhum placeholder sobrou
-    assert "github.com" not in ps1 and "/api/espelho/pacote.zip" in ps1
-    assert db.query("SELECT 1 FROM auditoria WHERE acao = 'baixar_instalador'", one=True)
-    # pacote do agente: só com o token, sem testes nem .git
-    assert anonimo.get("/api/espelho/pacote.zip").status_code == 403
-    z = anonimo.get("/api/espelho/pacote.zip", headers={"X-Espelho-Token": "tok-inst"})
-    assert z.status_code == 200
-    import io
-    import zipfile
+    r = c.get(f"/unidades/{uid}/instalador.exe")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/NexosixAgente-Setup.exe")
+    # o código aparece uma vez, na tela da escola
+    r = c.post(f"/unidades/{uid}/codigo-instalacao", follow_redirects=True)
+    html = r.get_data(as_text=True)
+    import re
 
-    nomes = zipfile.ZipFile(io.BytesIO(z.data)).namelist()
-    assert "nexosix/serve.py" in nomes and "nexosix/migrations/009_espelho_confiavel.sql" in nomes
-    assert not any(n.startswith("nexosix/tests") or "/.git" in n or n.endswith(".pyc") for n in nomes)
+    codigo = re.search(r"font-monospace\">([A-Z0-9]{4}-[A-Z0-9]{4})<", html).group(1)
+    assert codigo not in c.get(f"/unidades/{uid}/config").get_data(as_text=True)
+    assert db.query("SELECT config->'instalacao'->>'hash' AS h FROM unidades WHERE id = %s", (uid,), one=True)["h"] != codigo
+    # conferir não consome; minúsculas e sem hífen também valem (é digitado à mão)
+    v = anonimo.post("/api/espelho/ativar", json={"codigo": codigo.lower().replace("-", ""), "so_verificar": True})
+    assert v.status_code == 200 and v.get_json()["unidade_nome"] == "Recreio" and "token" not in v.get_json()
+    a = anonimo.post("/api/espelho/ativar", json={"codigo": codigo, "maquina": "PC-RECEPCAO"}).get_json()
+    assert a["ok"] and a["unidade_id"] == uid and a["nuvem_url"] == "https://nuvem.exemplo"
+    un = db.query("SELECT config FROM unidades WHERE id = %s", (uid,), one=True)["config"]
+    assert un["espelho_token"] == a["token"] and "instalacao" not in un
+    # uso único: a segunda vez não serve
+    assert anonimo.post("/api/espelho/ativar", json={"codigo": codigo}).status_code == 404
+    # o token novo funciona; ativar de novo (outro PC) troca o token e o antigo para
+    assert anonimo.get("/api/espelho/snapshot", headers={"X-Espelho-Token": a["token"]}).status_code == 200
+    from app.espelho import instalacao
+
+    codigo2, _ = instalacao.gerar(uid)
+    b = anonimo.post("/api/espelho/ativar", json={"codigo": codigo2}).get_json()
+    assert b["token"] != a["token"]
+    assert anonimo.get("/api/espelho/snapshot", headers={"X-Espelho-Token": a["token"]}).status_code == 403
+    assert db.query("SELECT 1 FROM auditoria WHERE acao = 'ativar_servidor_escola'", one=True)
+    assert db.query("SELECT 1 FROM auditoria WHERE acao = 'baixar_instalador'", one=True)
+    # código vencido não vale
+    codigo3, _ = instalacao.gerar(uid)
+    db.execute("""UPDATE unidades SET config = jsonb_set(config, '{instalacao,expira}', '"2020-01-01T00:00:00+00:00"') WHERE id = %s""", (uid,))
+    assert anonimo.post("/api/espelho/ativar", json={"codigo": codigo3, "so_verificar": True}).status_code == 404
     db.gucs, db.contexto.unidade_id = {}, None
+
+
+def test_ativar_bloqueia_quem_chuta_codigo(app, seed):
+    nuvem = create_app(NuvemConfig)
+    c = nuvem.test_client()
+    for _ in range(5):
+        assert c.post("/api/espelho/ativar", json={"codigo": "AAAA-AAAA"}).status_code == 404
+    from app.espelho import instalacao
+
+    codigo, _ = instalacao.gerar(seed["unidade"]["id"])
+    r = c.post("/api/espelho/ativar", json={"codigo": codigo})
+    assert r.status_code == 429  # nem o certo passa enquanto o IP está bloqueado
+    # no agente (MODO=local) a rota não existe
+    assert app.test_client().post("/api/espelho/ativar", json={"codigo": codigo}).status_code == 404
+    db.gucs, db.contexto.unidade_id = {}, None
+
+
+def test_fusos_funcionam_sem_base_do_sistema():
+    """Windows não tem /usr/share/zoneinfo: o pacote tzdata precisa estar instalado."""
+    import importlib.util
+
+    assert importlib.util.find_spec("tzdata"), "tzdata fora do requirements: o agente quebra no Windows"
+    from zoneinfo import ZoneInfo
+
+    import tzdata  # noqa: F401
+    assert ZoneInfo("America/Sao_Paulo").key == "America/Sao_Paulo"

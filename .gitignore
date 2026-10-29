@@ -10,3 +10,7 @@ docs/prints-fase2/
 
 # contratos têm preços e dados das partes: nunca no repositório (ele é público)
 docs/Contrato*
+
+# instalador do Windows (gerados no GitHub Actions)
+/build/
+/dist/

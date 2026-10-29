@@ -100,96 +100,66 @@ def status():
     return jsonify([dict(r) for r in rows])
 
 
-# ---------------------------------------------------------------- instalador do agente (servido pela nuvem)
+# ---------------------------------------------------------------- instalador do agente
 
-_RAIZ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_INSTALADOR = os.path.join(_RAIZ, "deploy", "windows", "instalador.ps1")
-_MARCA_PS1 = "#__NEXOSIX_PS1__#"
-
-
-def instalador_ps1(unidade, nuvem_url):
-    """PowerShell com os dados da unidade embutidos (o token do agente vai dentro)."""
-    with open(_INSTALADOR, encoding="utf-8") as f:
-        corpo = f.read()
-    return (corpo.replace("__NUVEM_URL__", nuvem_url).replace("__TOKEN__", (unidade.get("config") or {}).get("espelho_token", ""))
-            .replace("__UNIDADE_ID__", str(unidade["id"])).replace("__UNIDADE_NOME__", unidade["nome"].replace('"', "").replace("`", "")))
+# O .exe é um só para todas as escolas (publicado pelo GitHub Actions, ver deploy/windows/agente).
+# Se o repositório virar privado, publique o .exe em outro lugar e aponte AGENTE_EXE_URL pra lá.
+AGENTE_EXE_PADRAO = "https://github.com/brunobonfim25/catraca/releases/latest/download/NexosixAgente-Setup.exe"
 
 
-@bp.get("/unidades/<int:unidade_id>/instalador.cmd")
+@bp.get("/unidades/<int:unidade_id>/instalador.exe")
 @login_obrigatorio
-def instalador_cmd(unidade_id):
-    """Arquivo de dois cliques com o instalador inteiro dentro: pede elevação, extrai o .ps1
-    numa pasta só de administradores, roda e apaga.
-
-    Revisão (E18/S17): antes o .cmd baixava o .ps1 de /instalador/<token>.ps1 — link público
-    com o token na URL (qualquer um com o link instalava um "agente" da escola, e o token ia
-    pro log). Agora só quem está logado e configura a escola baixa, e nada mais é público."""
+def instalador_exe(unidade_id):
     from flask import g
 
     from ..auth.rbac import tem_permissao, unidade_atual_ou_403
 
-    if current_app.config.get("MODO") != "nuvem":
-        abort(404)
     un = unidade_atual_ou_403()
     if un["id"] != unidade_id or not tem_permissao(g.usuario, "gerir_dispositivos"):
         abort(404)
-    if not (un.get("config") or {}).get("espelho_token"):
-        abort(409)
-    ps1 = instalador_ps1(un, current_app.config["BASE_URL"])
-    if _MARCA_PS1 in ps1:
-        abort(500)
-    nome = "".join(c for c in un["nome"] if c.isascii() and (c.isalnum() or c in "-_")) or "unidade"
-    extrair = (
-        f"$m='{_MARCA_PS1}'; $t=[IO.File]::ReadAllText('%~f0'); $i=$t.LastIndexOf($m); "
-        "$d=Join-Path $env:ProgramData 'nexosix-inst'; New-Item -ItemType Directory -Force $d | Out-Null; "
-        "icacls $d /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null; "
-        "$p=Join-Path $d ('inst-'+[guid]::NewGuid()+'.ps1'); [IO.File]::WriteAllText($p, $t.Substring($i+$m.Length), [Text.Encoding]::UTF8); "
-        "try { & $p } finally { Remove-Item $p -Force -ErrorAction SilentlyContinue }"
-    )
     auditar("baixar_instalador", "unidade", un["id"])
-    corpo = (
-        "@echo off\r\n"
-        f"title Instalador do agente Nexosix - {nome}\r\n"
-        "net session >nul 2>&1 || (echo Pedindo permissao de administrador... & powershell -NoProfile -Command \"Start-Process -FilePath '%~f0' -Verb RunAs\" & exit /b)\r\n"
-        f"powershell -NoProfile -ExecutionPolicy Bypass -Command \"{extrair}\"\r\n"
-        "echo.\r\npause\r\nexit /b\r\n"
-        f"{_MARCA_PS1}\r\n{ps1}"
-    )
-    return Response(corpo, content_type="application/octet-stream",
-                    headers={"Content-Disposition": f"attachment; filename=instalar-agente-{nome}.cmd", "Cache-Control": "no-store"})
+    return redirect(os.environ.get("AGENTE_EXE_URL") or AGENTE_EXE_PADRAO)
 
 
-# O que vai pro PC da escola (sem testes, documentos, .git)
-_PACOTE = ("app", "worker", "integrations", "migrations", "deploy", "serve.py", "wsgi.py", "requirements.txt")
+def _json_utf8(dados, status=200):
+    """Acentos em UTF-8 de verdade (sem \\u00ed): a tela do instalador lê o nome da escola sem
+    decodificar escape."""
+    return Response(json.dumps(dados, ensure_ascii=False), status=status, content_type="application/json; charset=utf-8")
 
 
-def pacote_zip():
-    import io
-    import zipfile
+@bp.post("/api/espelho/ativar")
+def ativar():
+    """Instalador → nuvem: troca o código de instalação pelo token do agente.
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for item in _PACOTE:
-            caminho = os.path.join(_RAIZ, item)
-            if os.path.isfile(caminho):
-                z.write(caminho, f"nexosix/{item}")
-                continue
-            for base, pastas, arquivos in os.walk(caminho):
-                pastas[:] = [p for p in pastas if p != "__pycache__"]
-                for a in arquivos:
-                    if a.endswith((".pyc", ".env")) or a == ".env":
-                        continue
-                    completo = os.path.join(base, a)
-                    z.write(completo, "nexosix/" + os.path.relpath(completo, _RAIZ).replace(os.sep, "/"))
-    return buf.getvalue()
+    {"codigo": "ABCD-EFGH", "so_verificar": true} só confere e devolve o nome da escola (a tela
+    do instalador mostra antes de instalar). Sem so_verificar, consome o código.
+    Erros contam como tentativa de login (mesmo bloqueio progressivo por IP): o código tem 8
+    letras, mas sem limite daria pra tentar à vontade."""
+    from ..auth.routes import _bloqueado, _falhou, _ip
+    from . import instalacao
 
-
-@bp.get("/api/espelho/pacote.zip")
-def pacote():
-    """Código do agente, servido pela nuvem (com o token no cabeçalho). Antes o instalador
-    baixava do GitHub, o que obrigava o repositório a ser público."""
-    _unidade_do_agente()
-    return Response(pacote_zip(), content_type="application/zip", headers={"Content-Disposition": "attachment; filename=nexosix-agente.zip"})
+    if current_app.config.get("MODO") != "nuvem":
+        abort(404)
+    chaves = [f"ativar:{_ip()}"]
+    if _bloqueado(chaves):
+        return _json_utf8({"ok": False, "erro": "Muitas tentativas com código errado. Espere alguns minutos."}, 429)
+    dados = request.get_json(silent=True) or {}
+    codigo = str(dados.get("codigo") or "")
+    if dados.get("so_verificar"):
+        un = instalacao.verificar(codigo)
+        if not un:
+            _falhou(chaves)
+            return _json_utf8({"ok": False, "erro": "Código inválido ou vencido. Gere outro no painel."}, 404)
+        return _json_utf8({"ok": True, "unidade_id": un["id"], "unidade_nome": un["nome"]})
+    un, token = instalacao.ativar(codigo)
+    if not un:
+        _falhou(chaves)
+        return _json_utf8({"ok": False, "erro": "Código inválido ou vencido. Gere outro no painel."}, 404)
+    maquina = str(dados.get("maquina") or "")[:80]
+    auditar("ativar_servidor_escola", "unidade", un["id"], depois={"ip": _ip(), "maquina": maquina}, unidade_id=un["id"])
+    log.warning("servidor da escola %s ativado (máquina %s)", un["id"], maquina)
+    return _json_utf8({"ok": True, "unidade_id": un["id"], "unidade_nome": un["nome"],
+                       "nuvem_url": current_app.config["BASE_URL"], "token": token})
 
 
 # ---------------------------------------------------------------- agente (MODO=local)

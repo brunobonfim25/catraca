@@ -1,0 +1,4 @@
+# Scripts e instalador do Windows: UTF-8 com BOM e CRLF, byte a byte (o PowerShell 5.1 e o Inno
+# Setup leem sem BOM como ANSI e estragam os acentos)
+*.ps1 -text
+*.iss -text

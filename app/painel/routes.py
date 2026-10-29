@@ -458,19 +458,18 @@ def unidade_exportar(unidade_id):
                     headers={"Content-Disposition": f"attachment; filename=nexosix-{nome}.zip", "Cache-Control": "no-store"})
 
 
-@bp.post("/unidades/<int:unidade_id>/token-agente")
+@bp.post("/unidades/<int:unidade_id>/codigo-instalacao")
 @exige("gerir_dispositivos")
-def token_agente(unidade_id):
-    """Gera (ou troca) o token que o agente da escola usa. Aparece uma vez só."""
-    import secrets
+def codigo_instalacao(unidade_id):
+    """Código de uso único (24 h) que o instalador do servidor da escola pede. Aparece uma vez só."""
+    from ..espelho import instalacao
 
     un = unidade_atual_ou_403()
     if un["id"] != unidade_id:
         abort(404)
-    token = secrets.token_urlsafe(24)
-    db.execute("UPDATE unidades SET config = config || %s WHERE id = %s", (json.dumps({"espelho_token": token}), unidade_id), outbox=False)
-    auditar("token_agente", "unidade", unidade_id)
-    flash(f"Token do agente (copie agora, não aparece de novo): ESPELHO_TOKEN={token}", "warning")
+    codigo, expira = instalacao.gerar(unidade_id, g.usuario["id"])
+    auditar("codigo_instalacao", "unidade", unidade_id)
+    flash(codigo, "codigo")
     return redirect(url_for("painel.unidade_config", unidade_id=unidade_id))
 
 

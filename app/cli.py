@@ -109,6 +109,17 @@ def registrar_comandos(app):
             raise click.ClickException(f"unidade {unidade_id} não existe na nuvem")
         click.echo(f"ESPELHO_TOKEN={token}")
 
+    @app.cli.command("codigo-instalacao")
+    @click.option("--unidade-id", type=int, required=True)
+    def codigo_instalacao(unidade_id):
+        """Nuvem: código de uso único que o instalador do servidor da escola pede (o mesmo do painel)."""
+        from .espelho import instalacao
+
+        if not db.query("SELECT 1 FROM unidades WHERE id = %s", (unidade_id,), one=True):
+            raise click.ClickException(f"unidade {unidade_id} não existe")
+        codigo, expira = instalacao.gerar(unidade_id)
+        click.echo(codigo)
+
     @app.cli.command("backup-agora")
     @click.option("--pasta", default=None, help="salvar as partes nesta pasta em vez de mandar pelo Telegram")
     def backup_agora(pasta):

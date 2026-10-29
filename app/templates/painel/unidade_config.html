@@ -58,24 +58,28 @@
 {% if tem_permissao('gerir_dispositivos') %}
 <div class="card col-lg-6 mt-4"><div class="card-body">
   <h6>Servidor da escola</h6>
-  <p class="small mb-2">É o PC na escola que fala com a catraca. {% if un.config.get('espelho_token') %}{% if un.config.get('agente_visto_em') %}<span class="text-success">Conectado — visto em {{ un.config.agente_visto_em[:16]|replace('T',' ') }} UTC</span>{% else %}<span class="text-danger">Ainda não se conectou</span>{% endif %}.{% else %}Ainda não instalado: gere o token abaixo e depois baixe o instalador.{% endif %} <span class="text-muted">Código desta escola: {{ un.id }}.</span></p>
+  <p class="small mb-2">É o PC na escola que fala com a catraca. {% if un.config.get('agente_visto_em') %}<span class="text-success">Conectado — visto em {{ un.config.agente_visto_em[:16]|replace('T',' ') }} UTC</span>.{% elif un.config.get('espelho_token') %}<span class="text-danger">Ainda não se conectou.</span>{% else %}Ainda não instalado.{% endif %}</p>
   {% set ag = un.config.get('agente') or {} %}
-  {% if ag.get('schema') and schema_nuvem and ag.schema != schema_nuvem %}<div class="alert alert-warning py-1 small">Servidor da escola desatualizado (banco {{ ag.schema[:3] }}, nuvem {{ schema_nuvem[:3] }}): rode o instalador de novo no PC da escola.</div>{% endif %}
+  {% if ag.get('schema') and schema_nuvem and ag.schema != schema_nuvem %}<div class="alert alert-warning py-1 small">Servidor da escola desatualizado (banco {{ ag.schema[:3] }}, nuvem {{ schema_nuvem[:3] }}): baixe o instalador de novo e rode no PC da escola (atualiza sem pedir código).</div>{% endif %}
   {% if ag.get('web_ok') == false %}<div class="alert alert-danger py-1 small">O site do servidor da escola (o que a catraca chama) não está respondendo.</div>{% endif %}
   {% if ag.get('desvio_relogio_seg') is not none and (ag.desvio_relogio_seg > 60 or ag.desvio_relogio_seg < -60) %}<div class="alert alert-warning py-1 small">Relógio do PC da escola {{ ag.desvio_relogio_seg }} s diferente da nuvem: acerte a hora do Windows.</div>{% endif %}
   {% if quarentena %}<div class="alert alert-danger py-1 small">{{ quarentena }} alteração(ões) do servidor da escola não puderam ser aplicadas (quarentena). Avise o suporte Nexosix.</div>{% endif %}
-  {% if un.config.get('espelho_token') and modo == 'nuvem' %}
+  {% for _, m in get_flashed_messages(with_categories=true, category_filter=['codigo']) %}
+  <div class="alert alert-success text-center"><div class="small">Código de instalação (vale 24 h e uma instalação)</div><div class="display-6 fw-bold font-monospace">{{ m }}</div><div class="small">Digite no instalador. Ele não aparece de novo; se perder, gere outro.</div></div>
+  {% endfor %}
+  {% if modo == 'nuvem' %}
   <div class="border rounded p-2 mb-2 bg-light">
-    <b>Instalar no PC da escola</b> (Windows, qualquer técnico, pode ser por acesso remoto):
+    <b>Instalar no PC da escola</b> (Windows 10 ou 11, 64 bits; pode ser por acesso remoto):
     <ol class="mb-1 small">
-      <li><a href="{{ url_for('espelho.instalador_cmd', unidade_id=un.id) }}">Baixar <b>instalar-agente.cmd</b></a> e abrir com dois cliques no PC da escola (ele pede administrador).</li>
-      <li>Esperar terminar (10–20 min na primeira vez: baixa Python, PostgreSQL e o programa). Esta tela passa a mostrar "Conectado".</li>
+      <li><a href="{{ url_for('espelho.instalador_exe', unidade_id=un.id) }}"><b>Baixar NexosixAgente-Setup.exe</b></a> no PC da escola e abrir. Ele pede permissão de administrador.</li>
+      <li>Clique em <b>Gerar código de instalação</b> aqui embaixo e digite o código no instalador. Ele mostra o nome da escola para conferir.</li>
+      <li>Esperar terminar (2–5 min; não precisa de internet rápida, já vem tudo dentro). Esta tela passa a mostrar "Conectado".</li>
       <li>Depois, em Configuração › Catraca: cadastrar a catraca com o IP dela → Testar conexão → Configurar Monitor.</li>
     </ol>
-    <small class="text-muted">Rodar o mesmo arquivo de novo atualiza o servidor. O arquivo contém o token desta escola: não compartilhe fora dela. Apague o arquivo depois de instalar.</small>
+    <small class="text-muted">Para atualizar, rode um instalador mais novo no mesmo PC: não pede código e mantém os dados. Instalar com um código novo em <b>outro</b> PC desliga o servidor antigo desta escola.</small>
   </div>
+  <form method="post" action="{{ url_for('painel.codigo_instalacao', unidade_id=un.id) }}"><button class="btn btn-sm btn-primary">Gerar código de instalação</button></form>
   {% endif %}
-  <form method="post" action="{{ url_for('painel.token_agente', unidade_id=un.id) }}" onsubmit="return confirm('Gerar novo token? O servidor atual para de sincronizar até receber o novo (reinstale com o novo .cmd).')"><button class="btn btn-sm btn-outline-primary">{{ 'Gerar novo token' if un.config.get('espelho_token') else 'Gerar token do servidor' }}</button></form>
 </div></div>
 {% endif %}
 {% endblock %}
