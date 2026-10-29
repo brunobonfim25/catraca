@@ -51,7 +51,7 @@ na catraca: [`integrations/controlid/README.md`](integrations/controlid/README.m
 ## Nuvem (Railway)
 
 Em produção desde 27/10/2026: projeto `nexosix-acesso` (região us-east4), painel em
-`https://web-production-199c9.up.railway.app`. Empresa 1 = GEPPP, unidade 1 = Recreio.
+`https://painel.nexosix.com.br` (o endereço antigo `https://web-production-199c9.up.railway.app` continua valendo). Empresa 1 = GEPPP, unidade 1 = Recreio.
 
 Três serviços: **PostgreSQL**, **web** (`railway.json`: bootstrap + gunicorn) e **worker**
 (`python -m worker.main` — Telegram, LGPD, limpeza). Variáveis: `MODO=nuvem`, `DATABASE_URL`,

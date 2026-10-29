@@ -197,7 +197,10 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
 ## 8c. Situação operacional (atualizar a cada entrega)
 
 - **Nuvem no ar** (27/10/2026): Railway projeto `nexosix-acesso` (us-east4), web + worker +
-  Postgres, `https://web-production-199c9.up.railway.app`. Empresa 1 = GEPPP; unidades
+  Postgres, **`https://painel.nexosix.com.br`** (29/10: CNAME + TXT `_railway-verify.painel` no DNS
+  do Registro.br, certificado Let's Encrypt automático do Railway; `BASE_URL` no web e no worker).
+  O endereço antigo `https://web-production-199c9.up.railway.app` continua valendo — agentes já
+  instalados e links antigos usam ele; não remover o domínio do Railway. Empresa 1 = GEPPP; unidades
   Recreio (1) e Itaguaí (2). Superadmin = e-mail do Bruno.
 - **Telegram**: bot **@NexosixAcessoBot** criado em 27/10 na conta pessoal do Bruno (depois
   transferir para um número da Nexosix — BotFather permite). Token no Railway (web e worker),
@@ -256,8 +259,9 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
 - **Backup** (28/10): banco tem ~220 MB. Agendamento de backup do Railway (Postgres →
   Backups) precisa ser ligado pela tela — pela API não gravou.
 - **Pendentes**: certificado de assinatura de código para o .exe; planilha de alunos da escola (mandar o modelo); conta Brevo para o convite
-  por e-mail; PC chegar e aparecer como "agente visto"; domínio + Cloudflare (redundância
-  por DNS) + DNS local no roteador da escola; catraca chegar (roteiro em
+  por e-mail; PC chegar e aparecer como "agente visto"; Cloudflare para a redundância por
+  DNS (o `nexosix.com.br` fica no DNS do Registro.br, sem API; sugestão: domínio separado só das
+  catracas no Cloudflare) + DNS local no roteador da escola; catraca chegar (roteiro em
   `integrations/controlid/README.md`); ligar backup do Postgres no Railway; repositório
   pode virar privado (antes, publicar o .exe fora do GitHub e definir `AGENTE_EXE_URL`); módulo de mensalidade/cobrança
   (decidido deixar para depois do piloto).

@@ -17,7 +17,7 @@
   #define VersaoNumerica "0.0.0.0"
 #endif
 #ifndef NuvemPadrao
-  #define NuvemPadrao "https://web-production-199c9.up.railway.app"
+  #define NuvemPadrao "https://painel.nexosix.com.br"
 #endif
 
 [Setup]
