@@ -204,7 +204,18 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   webhook registrado em `/api/telegram/webhook`. Ativação dos responsáveis já funciona
   (ficha do responsável → Ativar Telegram → QR).
 - **PC do agente**: HP EliteDesk 705 G1 DM (A8, 8 GB, SSD 120, Win 10 Pro, RJ45) comprado
-  para teste. Instalação pelo `instalar-agente.cmd` do painel (Unidades → Config).
+  para teste.
+- **Instalador do agente** (29/10): `NexosixAgente-Setup.exe` único (Inno Setup), igual para
+  todas as escolas, com Python 3.13 embutido, PostgreSQL 16 próprio (porta 5439, só localhost) e
+  WinSW — nada é baixado na escola. A escola vem do **código de instalação** (uso único, 24 h,
+  painel › Escola › Servidor da escola, ou `flask codigo-instalacao`), trocado pelo token em
+  `/api/espelho/ativar` (token novo a cada ativação: o PC antigo para). Montado e testado de
+  ponta a ponta no Windows Server 2025 pelo GitHub Actions (`agente-windows.yml`); tag
+  `agente-vX.Y.Z` publica em Releases e o painel baixa de lá (`AGENTE_EXE_URL` se o repo virar
+  privado). O `.cmd` antigo e o `pacote.zip` foram removidos. Scripts do Windows: UTF-8 com BOM
+  + CRLF (PowerShell 5.1), e todo programa externo via `Rodar` (stderr não vira exceção).
+  Doc: `deploy/windows/agente/README.md`. Falta: certificado de assinatura de código (sem ele o
+  Windows mostra o aviso do SmartScreen).
 - **Reorganização do painel** (27/10, PDF em `docs/` da análise de usabilidade): fase 1 no ar —
   menu lateral por papel, tela inicial por papel (`HOME_POR_PERFIL`), perfil `secretaria`,
   Agora ≠ Recepção, Alunos/Responsáveis/Funcionários/Pendências, vocabulário único
@@ -240,11 +251,11 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   Railway com `RAILWAY_WEBHOOK_TOKEN`; vigia externo (UptimeRobot) em `/health` e `/health/worker`.
 - **Backup** (28/10): banco tem ~220 MB. Agendamento de backup do Railway (Postgres →
   Backups) precisa ser ligado pela tela — pela API não gravou.
-- **Pendentes**: planilha de alunos da escola (mandar o modelo); conta Brevo para o convite
+- **Pendentes**: certificado de assinatura de código para o .exe; planilha de alunos da escola (mandar o modelo); conta Brevo para o convite
   por e-mail; PC chegar e aparecer como "agente visto"; domínio + Cloudflare (redundância
   por DNS) + DNS local no roteador da escola; catraca chegar (roteiro em
   `integrations/controlid/README.md`); ligar backup do Postgres no Railway; repositório
-  pode virar privado (o instalador baixa o código da nuvem); módulo de mensalidade/cobrança
+  pode virar privado (antes, publicar o .exe fora do GitHub e definir `AGENTE_EXE_URL`); módulo de mensalidade/cobrança
   (decidido deixar para depois do piloto).
 
 ## 9. Como trabalhar com o Bruno

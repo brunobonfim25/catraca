@@ -105,26 +105,22 @@ pela internet e cache de DNS.
   (pede a senha). Ele migra até a versão do backup, carrega os dados e aplica as migrations
   mais novas.
 
-## Agente na escola (Windows) — instalador de dois cliques
+## Agente na escola (Windows) — NexosixAgente-Setup.exe
 
-1. No painel da nuvem (logado, perfil que configura a escola): Unidades → Config da unidade →
-   **Gerar token do agente** → **Baixar instalar-agente.cmd**. O arquivo já carrega o token e o
-   id da unidade (é uma credencial: apague depois de instalar). O código do agente é baixado
-   da própria nuvem (`/api/espelho/pacote.zip`, com o token) — não depende do GitHub.
-2. No PC da escola (IP fixo; Windows 10/11; pode ser por acesso remoto): dois cliques no `.cmd`.
-   Ele pede administrador e instala tudo sozinho: Python 3.12, PostgreSQL 16, o agente
-   (`C:\nexosix\app`), banco, `.env`, serviços **NexosixAgente** e **NexosixWorker** (NSSM, ou
-   tarefas agendadas se o NSSM estiver fora do ar), firewall (porta 80), backup diário e
-   desliga a suspensão do PC. Primeira vez: 10–20 min. Rodar de novo = atualizar o agente.
-3. Em ~1 min a unidade aparece como "agente visto" no painel. Status local: `http://<IP>/agente`.
+Um `.exe` só, igual para todas as escolas, com Python, PostgreSQL e o programa dentro (nada é
+baixado na escola). Detalhes, problemas comuns e como é testado: `deploy/windows/agente/README.md`.
+
+1. Painel da nuvem → Configuração › Escola › Servidor da escola → **Baixar NexosixAgente-Setup.exe**
+   e **Gerar código de instalação** (uso único, 24 h).
+2. No PC da escola (Windows 10/11 64 bits; pode ser por acesso remoto): abrir o `.exe`, digitar o
+   código, conferir o nome da escola. 2–5 min. Silencioso: `/VERYSILENT /CODIGO=ABCD-EFGH`.
+3. O painel passa a mostrar "Conectado". Status local: `http://<IP>/agente`.
 4. Na nuvem: Catracas → cadastrar com o IP do iDFace primário → **Testar conexão** →
    **Configurar Monitor** → (depois) **Mudar para Pro**. O agente executa e o resultado aparece no painel.
 
-Alternativa manual: `deploy/windows/instalar.ps1 -UnidadeId 1` com Python/PostgreSQL/NSSM já
-instalados. O instalador servido pela nuvem é `deploy/windows/instalador.ps1` com os
-placeholders preenchidos, embutido no `.cmd` (`/unidades/<id>/instalador.cmd`, só logado).
-`C:\nexosix` fica acessível só a SYSTEM e Administradores (o `.env` tem os tokens). Atualizar
-roda `flask espelho-enviar` antes de parar os serviços (nada fica só no PC).
+Rodar um `.exe` mais novo no mesmo PC = atualizar (sem código, mantém dados). Código pela linha de
+comando da nuvem: `flask --app wsgi codigo-instalacao --unidade-id <id>`. O `.exe` é compilado e
+testado no Windows pelo GitHub Actions; tag `agente-vX.Y.Z` publica em Releases.
 
 Linux (mini PC Ubuntu): `deploy/linux/` (systemd web + worker, `backup.sh`).
 
@@ -184,7 +180,7 @@ app/            Flask: auth, pessoas, dispositivos, acesso (regras), eventos (in
 integrations/   base_adapter + controlid (adapter fiel à doc, simulador HTTP, README documentado×testado)
 worker/         sync (fila → catraca), collect (logs), notify (Telegram), espelho (nuvem ↔ agente), lgpd, main
 migrations/     SQL numerado (001 base, 002 avisos, 003 outbox/contingência, 004 outbox por unidade, 005 comandos)
-deploy/         windows (instalar.ps1, backup.ps1) · linux (systemd, backup.sh)
+deploy/         windows/agente (instalador .exe: Inno Setup + scripts) · linux (systemd, backup.sh)
 tests/          pytest
 ```
 
