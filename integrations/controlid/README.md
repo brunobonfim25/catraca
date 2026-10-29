@@ -27,7 +27,9 @@ Coluna **Hardware** fica `pendente` até alguém rodar na catraca real e anotar 
 
 ## Fatos documentados que o código usa
 
-- **Eventos** (`access_logs.event`): 3 não identificado · 6 negado · 7 liberado · 10 liberado pela API · 11 botoeira · 13 desistência (iDBlock: liberou e não girou) · 14 sem resposta.
+- **Eventos** (`access_logs.event`, lista completa conferida em 29/10 em "Lista de Objetos"): 1 equipamento inválido · 2 parâmetros inválidos · 3 não identificado · 4 identificação pendente · 5 tempo esgotado · 6 negado · 7 concedido · 8 acesso pendente · 9 não é administrador · 10 aberto pela API sem motivo · 11 **acesso por botoeira** · 12 acesso pela interface web · 13 desistência (só iDBlock) · 14 sem resposta · 15 interfonia (só iDFace).
+- **Liberação remota** (`execute_actions.fcgi`, ação `catra`): `allow=clockwise|anticlockwise|both`; `relay=1|2` aciona os relés extras. Sem intertravamento não há retorno.
+- **Relés extras do idBlock Next** (`sec_box`): `catra_relay_1_enabled`, `catra_relay_2_enabled`, `catra_relay_N_enable_direction` = `left|right` (o relé acompanha o giro naquele sentido). `catra_timeout` (ms) = tempo de liberação do giro.
 - **Monitor** (catraca → servidor, POST JSON em `http://hostname:port/path/<endpoint>`): `dao` (access_logs inseridos), `catra_event` (TURN_LEFT/TURN_RIGHT/GIVE_UP), `device_is_alive`, `operation_mode`, `door`, `secbox`. Funciona atrás de NAT porque quem chama é a catraca.
 - **Modo Pro**: identificação local, autorização no servidor. Após 3 falhas seguidas cai em **contingência** (decide local com as regras carregadas) e manda `device_is_alive` a cada minuto até voltar.
 - **idBlock Next**: integração só pelo iDFace **primário** (`sec_box.catra_role=1`); o secundário não fala com servidor. Nos eventos online do primário vem `component_id`: `0MS1` = iDFace primário, `0MS2` = secundário. Mudar `catra_role` **reinicia e apaga o banco** do leitor.
@@ -52,6 +54,26 @@ Coluna **Hardware** fica `pendente` até alguém rodar na catraca real e anotar 
 13. A catraca **repete** `new_user_identified` com o mesmo `uuid` quando a resposta demora (`online_client.max_request_attempts`); o servidor devolve a mesma resposta. Confirmar que o `uuid` é por identificação.
 14. Desistência (não girou): chega `access_logs` com `event 13` e/ou `catra_event` `EVENT_GIVE_UP`. Os dois desfazem a saída, reabrem a espera do responsável e mandam "Correção" aos pais. Confirmar qual dos dois o equipamento manda.
 15. Escala de funcionário: em Standalone a catraca libera a qualquer hora (regra 24 h); o painel só alerta. Se precisar travar, criar regra de horário por funcionário (`criar_regra_horario`).
+16. **Botoeira** (botão físico na recepção, contingência quando sistema/PC/internet caem). A doc da API
+    só diz que o acionamento vira `access_logs.event = 11`; não diz quais bornes da placa usar, se a
+    entrada é contato seco, qual sentido cada uma das 2 botoeiras libera, nem o que vem em
+    `user_id`/`portal_id`. A página de GPIO (`gpio_state.fcgi`) não lista o idBlock Next. Testar:
+    (a) borne e sentido de cada botoeira pelo desenho 4.1 do guia impresso; (b) se o evento 11 chega
+    na hora pelo Monitor (`dao`) ou só na coleta; (c) se libera com o conjunto em modo Pro;
+    (d) apertada sem giro → vem evento 13 e/ou `EVENT_GIVE_UP`? O sistema já grava o evento
+    `BOTOEIRA` (sem pessoa: não muda presença nem avisa os pais).
+
+## Guia impresso do iDBlock Next (v0.2, 2024 — veio na caixa, fotos de 29/10)
+
+Só mecânica e elétrica; nada de API.
+- Elétrica: energia 110/220 V e cabo de rede em **eletrodutos separados**; caixa de passagem 4"x2"
+  com 2 eletrodutos de no mínimo 1" saindo sob a base. Base 209 x 145 mm, 4 furos Ø11, chumbador
+  mecânico (ou químico). Não ligar de vez antes de montar o suporte dos iDFaces.
+- Placa principal com **switch de 4 portas**: os 2 iDFaces ligam nela; da rede da escola até a
+  catraca basta **1 cabo**. Conectores: Relé 1 e Relé 2 (NF/C/NA), LEDs, iDFaces, IHM, chicote,
+  alimentação; entradas para **2 botoeiras**.
+- Suporte dos leitores: 2 leitores (independente de cada lado), só direita, só esquerda ou central.
+- Altura com leitor: 1367 mm. Testar reconhecimento com a criança mais baixa da escola.
 
 ## Primeiro dia com a catraca (roteiro)
 
