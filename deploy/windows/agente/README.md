@@ -31,7 +31,7 @@ sincronizar na hora (não disputa a catraca com o novo). Depois desinstale o ant
 
 ## Antes de instalar: o PC da escola
 
-Piloto: **Kamrui mini PC, AMD Ryzen 3 3250C, 8 GB, SSD 256 GB, Windows 11, ligado por cabo RJ45**. Folga de
+Piloto: **Bluecase Bluebox NUC, AMD Ryzen 3 3200U, 8 GB, SSD NVMe 256 GB, Windows 11 Pro, ligado por cabo RJ45**. Folga de
 sobra (o servidor usa ~300 MB de RAM e ~600 MB de disco + o banco). O que importa nele:
 
 - [ ] **Ao chegar, antes de ir para a escola:** Windows ativado (Configurações › Sistema › Ativação);

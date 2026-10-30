@@ -206,15 +206,22 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   transferir para um número da Nexosix — BotFather permite). Token no Railway (web e worker),
   webhook registrado em `/api/telegram/webhook`. Ativação dos responsáveis já funciona
   (ficha do responsável → Ativar Telegram → QR).
-- **PC do agente** (piloto Recreio): **Kamrui mini PC, AMD Ryzen 3 3250C, 8 GB, SSD 256 GB,
-  Windows 11** (comprado em 30/10 por R$ 1.333 no Mercado Livre; CPU na lista oficial do
-  Windows 11). Ao chegar, antes da escola: Windows ativado, BIOS com "Restore AC Power Loss"
-  ligado (se não tiver a opção, devolver), teste de tirar da tomada e religar sozinho.
-  **Ligado por cabo RJ45** (Wi-Fi desligado), IP reservado no roteador pelo MAC da placa de cabo.
-  Checklist em `deploy/windows/agente/README.md`. O HP EliteDesk 705 G1 Mini anterior parou com
-  o LED vermelho piscando (código de erro HP; contar piscadas — 5 = memória) e fica como
-  reserva se voltar. Regra para as próximas escolas: processador Intel de 8ª geração em diante,
-  AMD Ryzen 3000 em diante ou Intel N100/N150; 8 GB; nunca chip de notebook (final M/U) nem DDR3.
+- **PC do agente** (piloto Recreio): **Bluecase Bluebox NUC, AMD Ryzen 3 3200U, 8 GB DDR4 (2 slots,
+  até 32 GB), SSD NVMe 256 GB + baia SATA 2,5", Windows 11 Pro, Auto-power ON na ficha do
+  fabricante, 12 meses de garantia de fábrica, Anatel** — escolhido em 30/10 (preço pago: a
+  confirmar com o Bruno; referências conferidas ao vivo em 30/10: Kabum 8 GB/256 GB Win10
+  R$ 1.997,90 no PIX, 8 GB/512 GB Win11 R$ 2.266,35 no PIX). Vira o **padrão Nexosix** para as
+  próximas escolas. Ao chegar, antes da escola: Windows ativado, BIOS com Auto-power ON /
+  "Restore AC Power Loss" ligado, teste de tirar da tomada e religar sozinho. **Ligado por cabo
+  RJ45** (Wi-Fi desligado), IP reservado no roteador pelo MAC da placa de cabo. Checklist em
+  `deploy/windows/agente/README.md`. O HP EliteDesk 705 G1 Mini anterior parou com o LED
+  vermelho piscando (código de erro HP; contar piscadas — 5 = memória) e fica como reserva se
+  voltar. Regra de compra: Intel 8ª geração em diante, AMD Ryzen 3000 em diante ou Intel
+  N100/N150; 8 GB; nunca chip de notebook (final M/U), DDR3 ou memória soldada.
+- **Custos de implantação por escola (atualizar a proposta — não estavam na proposta de
+  R$ 3.800):** servidor da escola (Bluebox acima, valor pago a registrar) + no-break pequeno
+  (a pesquisar com link) + cabo/eletroduto/botoeira (eletricista da escola). Planilha de
+  custos fica fora do repositório público (`docs/` ignorado pelo git, junto com os contratos).
 - **Instalador do agente** (29/10): `NexosixAgente-Setup.exe` único (Inno Setup), igual para
   todas as escolas, com Python 3.13 embutido, PostgreSQL 16 próprio (porta 5439, só localhost) e
   WinSW — nada é baixado na escola. A escola vem do **código de instalação** (uso único, 24 h,
