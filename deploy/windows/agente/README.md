@@ -31,8 +31,12 @@ sincronizar na hora (não disputa a catraca com o novo). Depois desinstale o ant
 
 ## Antes de instalar: o PC da escola
 
-Piloto: **HP EliteDesk 705 G1 Mini (AMD), 8 GB, SSD 120 GB, Windows 11, ligado por cabo RJ45**. Folga de
+Piloto: **Kamrui mini PC, AMD Ryzen 3 3250C, 8 GB, SSD 256 GB, Windows 11, ligado por cabo RJ45**. Folga de
 sobra (o servidor usa ~300 MB de RAM e ~600 MB de disco + o banco). O que importa nele:
+
+- [ ] **Ao chegar, antes de ir para a escola:** Windows ativado (Configurações › Sistema › Ativação);
+      na BIOS (Del ou F7 ao ligar) ligar *Restore AC Power Loss* / *Auto Power On* — se a opção não
+      existir, devolver; tirar da tomada ligado e ver se religa sozinho.
 
 - [ ] **Cabo de rede**, na mesma rede da catraca. No Wi-Fi a conexão cai, o IP muda e alguns
       roteadores isolam o Wi-Fi do cabo (a catraca não acha o PC). O instalador avisa se estiver no Wi-Fi.
@@ -45,9 +49,11 @@ sobra (o servidor usa ~300 MB de RAM e ~600 MB de disco + o banco). O que import
 - [ ] **No-break** pequeno no PC e no roteador, se der (a catraca tem a contingência, mas sem
       servidor a saída "só com responsável" passa pela recepção).
 - [ ] Windows atualizado e com **data e hora certas** (o instalador liga a sincronização de hora).
-- [ ] O EliteDesk G1 é de 2014: o processador não está na lista oficial do Windows 11 (roda, mas
-      a Microsoft pode deixar de mandar atualizações grandes). Para o piloto, ok; para as próximas
-      escolas, preferir um mini PC com processador suportado.
+- [ ] Comprar para as próximas escolas: processador **Intel de 8ª geração em diante** (i3/i5-8xxx,
+      9xxx, 10xxx, 12xxx), **AMD Ryzen 3000 em diante** ou **Intel N100/N150**; **8 GB**; SSD; Windows 11
+      ativado. Descartar: chip de notebook (final M, U, H), DDR3, "Core i5" sem número de geração,
+      Windows "Trial". Usado corporativo (OptiPlex 3060+, EliteDesk 800 G4+, ThinkCentre M720q+)
+      serve e costuma sair mais barato que mini PC novo.
 
 O instalador já faz sozinho: tira a suspensão e a hibernação na tomada, desliga a economia de
 energia das placas de rede e deixa o Wi-Fi em desempenho máximo.

@@ -206,10 +206,15 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   transferir para um número da Nexosix — BotFather permite). Token no Railway (web e worker),
   webhook registrado em `/api/telegram/webhook`. Ativação dos responsáveis já funciona
   (ficha do responsável → Ativar Telegram → QR).
-- **PC do agente** (piloto Recreio): HP EliteDesk 705 G1 Mini (AMD, 8 GB, SSD 120 GB,
-  **Windows 11**), **ligado por cabo RJ45** (Wi-Fi desligado). IP reservado no roteador pelo
-  MAC da placa de cabo, BIOS "After Power Loss = Power On". CPU fora da lista oficial do Windows 11 (roda; para as próximas escolas,
-  mini PC com CPU suportada). Checklist em `deploy/windows/agente/README.md`.
+- **PC do agente** (piloto Recreio): **Kamrui mini PC, AMD Ryzen 3 3250C, 8 GB, SSD 256 GB,
+  Windows 11** (comprado em 30/10 por R$ 1.333 no Mercado Livre; CPU na lista oficial do
+  Windows 11). Ao chegar, antes da escola: Windows ativado, BIOS com "Restore AC Power Loss"
+  ligado (se não tiver a opção, devolver), teste de tirar da tomada e religar sozinho.
+  **Ligado por cabo RJ45** (Wi-Fi desligado), IP reservado no roteador pelo MAC da placa de cabo.
+  Checklist em `deploy/windows/agente/README.md`. O HP EliteDesk 705 G1 Mini anterior parou com
+  o LED vermelho piscando (código de erro HP; contar piscadas — 5 = memória) e fica como
+  reserva se voltar. Regra para as próximas escolas: processador Intel de 8ª geração em diante,
+  AMD Ryzen 3000 em diante ou Intel N100/N150; 8 GB; nunca chip de notebook (final M/U) nem DDR3.
 - **Instalador do agente** (29/10): `NexosixAgente-Setup.exe` único (Inno Setup), igual para
   todas as escolas, com Python 3.13 embutido, PostgreSQL 16 próprio (porta 5439, só localhost) e
   WinSW — nada é baixado na escola. A escola vem do **código de instalação** (uso único, 24 h,
