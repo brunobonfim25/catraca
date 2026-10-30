@@ -77,7 +77,7 @@ def test_planejar_e_executar_cria_turmas_alunos_e_uma_mae_para_dois_irmaos(seed)
     plano = imp.planejar(un, regs)
     r = plano["resumo"]
     assert (r["alunos_novos"], r["responsaveis_novos"], r["vinculos_novos"], r["linhas_com_erro"]) == (2, 2, 4, 1)
-    assert r["turmas_novas"] == ["Pré 2 (manhã)", "2º ano (manhã)"]
+    assert r["turmas_novas"] == ["Pré 2 (manhã)", "2º Ano (manhã)"]
     assert db.query("SELECT count(*) AS n FROM turmas WHERE unidade_id = %s", (un,), one=True)["n"] == 2  # prévia não grava
 
     resumo = imp.executar(un, regs, {"assinado_por": "Responsável (termo da matrícula)", "observacao": "teste"})
@@ -176,6 +176,7 @@ def test_export_do_sistema_da_escola_e_reconhecido():
     assert (r1["nome"], r1["telefone"], r1["email"]) == (2, 3, 4) and (r2["nome"], r2["telefone"], r2["email"]) == (5, 7, 6)
     regs = imp.processar(linhas, m, ini)
     assert [r["aluno"]["turma"] for r in regs] == ["Pré 1 M", "Berçário 2"]
+    assert [imp._turma(x) for x in ("Ensino Fundamental / 1º Ano / 2026 / 1° ANO M", "Ensino Fundamental / 3° Ano / 2026 / 3º Ano M", "Ensino Fundamental / 5° ano / 2026 / 5º ano T")] == ["1º Ano M", "3º Ano M", "5º Ano T"]
     assert regs[0]["aluno"]["matricula"] == "289"
     assert regs[1]["aluno"]["turno"] == "integral" and not regs[1]["avisos"]
     assert [x["nome"] for x in regs[0]["responsaveis"]] == ["Carla Exemplo", "Rafael Exemplo"]

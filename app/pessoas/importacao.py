@@ -256,7 +256,12 @@ def _turma(texto):
         partes = [p.strip() for p in t.split("/") if p.strip()]
         if len(partes) > 1:
             t = partes[-1]
-    return _nome(t) if t.isupper() else t
+    # a escola escreve "1° ANO M", "3º Ano M" e "5º ano T" — sinal de grau × ordinal e caixa variam
+    t = t.replace("°", "º")
+    # "º" conta como minúscula pro isupper(): "1º ANO M" não entrava na regra de caixa alta
+    if t.replace("º", "").isupper() or re.match(r"^\d+º\s*ano\b", t, re.I):
+        t = " ".join(w.lower() if w.lower() in PARTICULAS and i else w[:1].upper() + w[1:].lower() for i, w in enumerate(t.split()))
+    return t
 
 
 def _valor(linha, idx):
