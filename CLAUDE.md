@@ -273,3 +273,8 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
 - Cada entrega: o que foi feito, como testar, próximo passo. Sem teoria desnecessária.
 - Segurança e LGPD não são opcionais: foto é dado biométrico; consentimento antes do cadastro; exclusão em até 30 dias após desligamento; acesso restrito; auditoria.
 - Nunca criar mecanismo que contorne autenticação da catraca ou a saída de emergência (BQC).
+- **Preços e valores: nunca chutar.** Qualquer número de dinheiro (preço de equipamento, serviço,
+  licença, domínio, mensalidade de terceiro) sai de pesquisa feita na hora, em loja brasileira,
+  com o **link da página onde o valor foi visto** e a data. Se não der para pesquisar, dizer que
+  não sabe o valor — nunca estimar de memória (30/10: estimativas de memória para mini PC
+  saíram pela metade do preço real e custaram uma noite de busca errada).
