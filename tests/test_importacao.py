@@ -158,3 +158,24 @@ def test_recepcao_nao_importa(app, seed):
     c = app.test_client()
     c.post("/login", data={"email": "recepcao@teste.com", "senha": "senha123"})
     assert c.get("/pessoas/importar").status_code == 403
+
+
+# export do sistema da escola (30/10): "filiação 1/2", turma como caminho, turno "Manhã/Tarde"
+ESCOLA = [
+    ["Nome do aluno", "Matrícula", "Nome da filiação 1", "Celular da filiação 1", "E-mail da filiação 1", "Nome da filiação 2", "E-mail da filiação 2", "Celular da filiação 2", "Turma", "Turno principal"],
+    ["Ana Exemplo", "289'", "Carla Exemplo", "21 98888-0001", "carla@exemplo.com", "Rafael Exemplo", "", "", "Educação Infantil / Pré 1 ( 4anos ) / 2026 / PRÉ 1 M", "Manhã"],
+    ["Bento Exemplo", "290", "Carla Exemplo", "21988880001", "", "", "", "", "Educação Infantil / Berçário 2 (13 a 23 meses) / 2026 / BERÇÁRIO 2", "Manhã/Tarde"],
+]
+
+
+def test_export_do_sistema_da_escola_e_reconhecido():
+    cab, linhas, ini = imp.ler_arquivo("alunos.xlsx", _xlsx(ESCOLA))
+    m = imp.adivinhar_mapeamento(cab)
+    assert m["aluno_nome"] == 0 and m["turma"] == 8 and m["turno"] == 9 and m["matricula"] == 1
+    r1, r2 = m["resp"][0], m["resp"][1]
+    assert (r1["nome"], r1["telefone"], r1["email"]) == (2, 3, 4) and (r2["nome"], r2["telefone"], r2["email"]) == (5, 7, 6)
+    regs = imp.processar(linhas, m, ini)
+    assert [r["aluno"]["turma"] for r in regs] == ["Pré 1 M", "Berçário 2"]
+    assert regs[0]["aluno"]["matricula"] == "289"
+    assert regs[1]["aluno"]["turno"] == "integral" and not regs[1]["avisos"]
+    assert [x["nome"] for x in regs[0]["responsaveis"]] == ["Carla Exemplo", "Rafael Exemplo"]

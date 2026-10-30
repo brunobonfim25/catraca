@@ -40,7 +40,9 @@ MODELO_CABECALHO = ["Aluno", "Turma", "Turno", "Matrícula"] + [
 ]
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 TURNOS = {"manha": "manha", "matutino": "manha", "m": "manha", "tarde": "tarde", "vespertino": "tarde", "t": "tarde",
-          "integral": "integral", "i": "integral", "manha e tarde": "integral", "periodo integral": "integral"}
+          "integral": "integral", "i": "integral", "manha e tarde": "integral", "periodo integral": "integral",
+          # planilha da escola (30/10): "Manhã/Tarde" no turno principal
+          "manha tarde": "integral", "tarde manha": "integral", "manha e tarde integral": "integral"}
 TURNO_ROTULO = {"manha": "manhã", "tarde": "tarde", "integral": "integral"}
 PARTICULAS = {"da", "de", "do", "das", "dos", "e"}
 
@@ -141,7 +143,8 @@ def ler_arquivo(nome, conteudo):
 
 IGNORAR = {"cpf", "rg", "documento", "nascimento", "endereco", "cep", "bairro", "cidade", "uf", "profissao", "sexo", "idade",
            "naturalidade", "nacionalidade", "observacao", "observacoes", "obs", "letivo", "situacao", "status", "data"}
-PALAVRAS_RESP = {"responsavel", "responsaveis", "resp", "pais", "familiar", "contato"}
+# "filiação 1/2" é como o sistema da escola (planilha de 30/10) chama mãe/pai
+PALAVRAS_RESP = {"responsavel", "responsaveis", "resp", "pais", "familiar", "contato", "filiacao", "genitor", "genitora"}
 PALAVRAS_TEL = {"telefone", "celular", "fone", "tel", "whatsapp", "whats", "cel", "contato"}
 
 
@@ -246,6 +249,16 @@ def _nome(v):
     return v
 
 
+def _turma(texto):
+    """"Educação Infantil / Pré 1 ( 4anos ) / 2026 / PRÉ 1 M" (caminho do sistema da escola) → "Pré 1 M"."""
+    t = " ".join((texto or "").split())
+    if "/" in t:
+        partes = [p.strip() for p in t.split("/") if p.strip()]
+        if len(partes) > 1:
+            t = partes[-1]
+    return _nome(t) if t.isupper() else t
+
+
 def _valor(linha, idx):
     return (linha[idx] if idx is not None and idx < len(linha) else "").strip()
 
@@ -282,8 +295,8 @@ def processar(linhas, mapa, linha_inicial=2):
         if not any((c or "").strip() for c in linha):
             continue
         nome = _nome(_valor(linha, mapa.get("aluno_nome")))
-        turma = " ".join(_valor(linha, mapa.get("turma")).split())
-        matricula = _valor(linha, mapa.get("matricula"))
+        turma = _turma(_valor(linha, mapa.get("turma")))
+        matricula = _valor(linha, mapa.get("matricula")).strip("'\" ")  # "289'" veio assim da escola
         turno_txt = _valor(linha, mapa.get("turno"))
         erros, avisos = [], []
         if not nome:
