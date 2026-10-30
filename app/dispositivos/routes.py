@@ -1,5 +1,8 @@
 """Catracas/leitores: cadastro, teste de conexão, Monitor, modo online, fila."""
+import ipaddress
 import json
+import os
+import re
 
 from flask import Blueprint, abort, current_app, flash, g, redirect, render_template, request, url_for
 
@@ -26,14 +29,51 @@ def lista():
     return render_template("dispositivos/lista.html", dispositivos=service.listar(un["id"], apenas_ativos=False), fila=service.resumo_fila(un["id"]))
 
 
+class FormInvalido(ValueError):
+    pass
+
+
+_HOST_RE = re.compile(r"^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$")
+
+
+def _host(valor, rotulo):
+    """Auditoria de 30/10: o campo aceitava qualquer coisa e o agente fazia POST da senha admin da
+    catraca para lá (SSRF + vazamento da senha). Só IPv4 de rede ou nome DNS simples."""
+    h = (valor or "").strip().lower()
+    if not h:
+        return None
+    try:
+        a = ipaddress.ip_address(h)
+    except ValueError:
+        if not _HOST_RE.match(h) or h == "localhost" or h.endswith(".localhost") or "." not in h:
+            raise FormInvalido(f"{rotulo} inválido: use o IP da catraca (ex.: 192.168.0.50) ou um nome DNS da rede")
+        return h
+    # 127.0.0.1 só com o simulador (testes): em produção apontaria o agente para o próprio PC
+    simulador = current_app.config.get("TESTING") or current_app.config.get("CONTROLID_SIMULADOR") or os.environ.get("NEXOSIX_INSEGURO_SO_PARA_TESTES") == "1"
+    if a.version != 4 or (a.is_loopback and not simulador) or a.is_link_local or a.is_multicast or a.is_unspecified or a.is_reserved:
+        raise FormInvalido(f"{rotulo} inválido: tem que ser um IP da rede da escola")
+    return h
+
+
 def _salvar(d, f):
+    ip = _host(f.get("ip"), "IP da catraca")
+    if not ip:
+        raise FormInvalido("Informe o IP da catraca")
+    try:
+        porta = int(f.get("porta") or 80)
+    except ValueError:
+        porta = 0
+    if not 1 <= porta <= 65535:
+        raise FormInvalido("Porta inválida")
+    if d and (ip != (d["ip"] or "").lower() or porta != d["porta"]) and not f.get("senha_api"):
+        raise FormInvalido("Ao trocar o IP ou a porta da catraca, digite a senha da API de novo (a senha gravada só é usada no endereço antigo)")
     campos = dict(
-        nome=f["nome"].strip(), fabricante=f.get("fabricante") or "controlid", modelo=f.get("modelo"), ip=f.get("ip", "").strip(),
-        porta=int(f.get("porta") or 80), usuario_api=f.get("usuario_api") or "admin", funcao=f.get("funcao") or "catraca",
+        nome=f["nome"].strip(), fabricante=f.get("fabricante") or "controlid", modelo=f.get("modelo"), ip=ip,
+        porta=porta, usuario_api=f.get("usuario_api") or "admin", funcao=f.get("funcao") or "catraca",
         sentido=f.get("sentido") or "bidirecional", modo=f.get("modo") or "standalone", ativo=f.get("ativo") == "1",
     )
     cfg = {"allow_entrada": f.get("allow_entrada") or "clockwise", "allow_saida": f.get("allow_saida") or "anticlockwise",
-           "ip_vpn": (f.get("ip_vpn") or "").strip() or None}
+           "ip_vpn": _host(f.get("ip_vpn"), "IP na VPN")}
     if d:
         sets = ", ".join(f"{k} = %s" for k in campos)
         params = list(campos.values()) + [json.dumps(cfg), d["id"]]
@@ -58,7 +98,11 @@ def _salvar(d, f):
 def novo():
     unidade_atual_ou_403()
     if request.method == "POST":
-        did = _salvar(None, request.form)
+        try:
+            did = _salvar(None, request.form)
+        except FormInvalido as e:
+            flash(str(e), "danger")
+            return render_template("dispositivos/form.html", d=None), 400
         n = service.enfileirar_todos_da_unidade(did, g.unidade["id"])
         flash(f"Catraca cadastrada. {n} pessoa(s) enfileirada(s) para sincronizar.", "success")
         return redirect(url_for("dispositivos.detalhe", dispositivo_id=did))
@@ -70,7 +114,11 @@ def novo():
 def editar(dispositivo_id):
     un, d = _disp(dispositivo_id)
     if request.method == "POST":
-        _salvar(d, request.form)
+        try:
+            _salvar(d, request.form)
+        except FormInvalido as e:
+            flash(str(e), "danger")
+            return render_template("dispositivos/form.html", d=d), 400
         flash("Catraca atualizada", "success")
         return redirect(url_for("dispositivos.detalhe", dispositivo_id=dispositivo_id))
     return render_template("dispositivos/form.html", d=d)

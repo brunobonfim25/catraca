@@ -19,7 +19,9 @@ ROTULO_PERFIL = {"superadmin": "Nexosix", "admin_unidade": "Direção", "secreta
 
 # Permissões nomeadas → perfis que as têm. Centralizado pra regra não se espalhar nas rotas.
 PERMISSOES = {
-    "cadastrar_pessoas": {"superadmin", "admin_unidade", "secretaria", "recepcao"},
+    # Auditoria de 30/10: recepção aqui podia criar um "responsável", pôr a foto de qualquer adulto
+    # e ele retirava a criança pela catraca. Recepção libera e registra visitante (liberar_manual).
+    "cadastrar_pessoas": {"superadmin", "admin_unidade", "secretaria"},
     "gerir_turmas": {"superadmin", "admin_unidade", "secretaria"},
     "gerir_dispositivos": {"superadmin", "admin_unidade"},
     "gerir_usuarios": {"superadmin", "admin_unidade"},

@@ -427,6 +427,16 @@ _EXPORTACAO = {
 }
 
 
+def _celula_csv(v):
+    """Auditoria de 30/10: nome cadastrado como "=HYPERLINK(...)" ou "=cmd|..." virava fórmula no
+    Excel de quem exporta (CSV injection). O apóstrofo faz o Excel tratar como texto."""
+    if v is None:
+        return ""
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r", "|"):
+        return "'" + v
+    return v
+
+
 @bp.get("/unidades/<int:unidade_id>/exportar.zip")
 @exige("configurar_escola")
 def unidade_exportar(unidade_id):
@@ -450,7 +460,7 @@ def unidade_exportar(unidade_id):
             if linhas:
                 w.writerow(linhas[0].keys())
                 for r in linhas:
-                    w.writerow(["" if v is None else v for v in r.values()])
+                    w.writerow([_celula_csv(v) for v in r.values()])
             z.writestr(nome, "\ufeff" + texto.getvalue())  # BOM: o Excel abre com acento certo
     auditar("exportar_dados", "unidade", unidade_id)
     nome = "".join(c for c in un["nome"] if c.isalnum()) or "escola"

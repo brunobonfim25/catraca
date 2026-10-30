@@ -68,11 +68,24 @@ def criar_responsavel(unidade_id, nome, telefone=None, documento=None, email=Non
 
 
 def atualizar_responsavel(pessoa_id, nome, telefone=None, documento=None, email=None):
+    """Devolve True se o Telegram foi desvinculado por troca de telefone."""
+    from ..util import mesmo_telefone
+
+    antes = db.query("SELECT telefone, telegram_chat_id FROM responsaveis WHERE pessoa_id = %s", (pessoa_id,), one=True) or {}
+    novo_tel = (telefone or "").strip() or None
     db.execute("UPDATE pessoas SET nome = %s, documento = %s, atualizado_em = now() WHERE id = %s", (nome.strip(), documento or None, pessoa_id))
-    db.execute("UPDATE responsaveis SET telefone = %s, email = %s WHERE pessoa_id = %s", ((telefone or "").strip() or None, _email(email), pessoa_id))
-    auditar("editar", "responsavel", pessoa_id, depois={"nome": nome, "telefone": telefone, "email": _email(email)})
+    db.execute("UPDATE responsaveis SET telefone = %s, email = %s WHERE pessoa_id = %s", (novo_tel, _email(email), pessoa_id))
+    desvinculou = False
+    # Auditoria de 30/10 (LGPD): número trocado (separação, celular vendido) e o chat antigo seguia
+    # recebendo "Maria saiu com..." — o aviso vai para quem tem o telefone cadastrado, e só ele.
+    if antes.get("telegram_chat_id") and not mesmo_telefone(antes.get("telefone"), novo_tel):
+        db.execute("UPDATE responsaveis SET telegram_chat_id = NULL, telegram_token = NULL, telegram_token_em = NULL WHERE pessoa_id = %s", (pessoa_id,))
+        desvinculou = True
+    auditar("editar", "responsavel", pessoa_id, antes={"telefone": antes.get("telefone")},
+            depois={"nome": nome, "telefone": telefone, "email": _email(email), "telegram_desvinculado": desvinculou})
     p = db.query("SELECT unidade_id FROM pessoas WHERE id = %s", (pessoa_id,), one=True)
     dispositivos.enfileirar_pessoa(pessoa_id, p["unidade_id"], com_foto=False)
+    return desvinculou
 
 
 def criar_funcionario(unidade_id, nome, cargo=None, escala=None, documento=None):

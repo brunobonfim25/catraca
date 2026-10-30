@@ -124,8 +124,10 @@ def responsavel_editar(pessoa_id):
         abort(404)
     if request.method == "POST":
         f = request.form
-        service.atualizar_responsavel(pessoa_id, f["nome"], f.get("telefone"), f.get("documento"), f.get("email"))
-        flash("Responsável atualizado", "success")
+        if service.atualizar_responsavel(pessoa_id, f["nome"], f.get("telefone"), f.get("documento"), f.get("email")):
+            flash("Responsável atualizado. O telefone mudou: o Telegram antigo foi desvinculado — peça para ativar de novo pelo QR.", "warning")
+        else:
+            flash("Responsável atualizado", "success")
         return redirect(url_for("pessoas.detalhe", pessoa_id=pessoa_id))
     return render_template("pessoas/responsavel_form.html", p=p, aluno_id=None, dias=DIAS)
 
@@ -330,14 +332,21 @@ def foto_jpg(pessoa_id):
         abort(404)
     # Revisão (S19): ver a foto (dado biométrico) não ficava registrado. Uma linha por pessoa
     # por hora e por sessão — a miniatura da lista não conta (senão 300 linhas por página).
-    if request.args.get("mini") != "1":
-        vistas = session.get("fotos_vistas") or {}
-        agora = int(time.time())
-        if agora - int(vistas.get(str(pessoa_id), 0)) > 3600:
+    # Auditoria de 30/10: ?mini=1 devolvia a mesma foto inteira sem registro — qualquer perfil com
+    # ver_presenca baixava todas as fotos da escola sem rastro. A lista agora deixa UMA linha por
+    # sessão e por hora ("ver_fotos_lista"); a foto aberta continua uma linha por pessoa.
+    mini = request.args.get("mini") == "1"
+    chave = "lista" if mini else str(pessoa_id)
+    vistas = session.get("fotos_vistas") or {}
+    agora = int(time.time())
+    if agora - int(vistas.get(chave, 0)) > 3600:
+        if mini:
+            auditar("ver_fotos_lista", "unidade", unidade_atual_ou_403()["id"])
+        else:
             auditar("ver_foto", "pessoa", pessoa_id)
-            vistas = {k: v for k, v in vistas.items() if agora - int(v) <= 3600}
-            vistas[str(pessoa_id)] = agora
-            session["fotos_vistas"] = vistas
+        vistas = {k: v for k, v in vistas.items() if agora - int(v) <= 3600}
+        vistas[chave] = agora
+        session["fotos_vistas"] = vistas
     return Response(jpeg, content_type="image/jpeg", headers={"Cache-Control": "private, max-age=60"})
 
 

@@ -26,6 +26,10 @@ from . import service
 
 MAX_BYTES = 5 * 1024 * 1024
 MAX_LINHAS = 5000
+# Auditoria de 30/10: um .xlsx de 5 MB pode ter dezenas de GB dentro (zip bomb) e derrubar o web
+MAX_DESCOMPACTADO = 60 * 1024 * 1024
+MAX_COLUNAS = 60
+MAX_CELULA = 200
 SLOTS = service.MAX_RESPONSAVEIS
 
 CAMPOS_ALUNO = [("aluno_nome", "Nome do aluno", True), ("turma", "Turma", True), ("turno", "Turno", False), ("matricula", "Matrícula", False)]
@@ -63,12 +67,20 @@ def _celula(v):
         return str(int(v)) if v.is_integer() else str(v)  # celular digitado como número no Excel
     if isinstance(v, (datetime, date)):
         return v.strftime("%d/%m/%Y")
-    return " ".join(str(v).split())
+    return " ".join(str(v).split())[:MAX_CELULA]
 
 
 def _ler_xlsx(conteudo):
     import openpyxl
+    import zipfile
 
+    try:
+        with zipfile.ZipFile(io.BytesIO(conteudo)) as z:
+            total = sum(i.file_size for i in z.infolist())
+    except zipfile.BadZipFile as e:
+        raise PlanilhaInvalida("arquivo não é uma planilha .xlsx válida") from e
+    if total > MAX_DESCOMPACTADO:
+        raise PlanilhaInvalida("planilha grande demais ao abrir (limite 60 MB); exporte só as colunas necessárias")
     try:
         wb = openpyxl.load_workbook(io.BytesIO(conteudo), read_only=True, data_only=True)
     except Exception as e:  # noqa: BLE001 — arquivo corrompido/protegido: mensagem pra secretaria
@@ -76,7 +88,7 @@ def _ler_xlsx(conteudo):
     ws = wb["Alunos"] if "Alunos" in wb.sheetnames else wb.worksheets[0]
     tabela = []
     for linha in ws.iter_rows(values_only=True):
-        tabela.append([_celula(v) for v in linha])
+        tabela.append([_celula(v) for v in linha[:MAX_COLUNAS]])
         if len(tabela) > MAX_LINHAS + 20:
             break
     wb.close()
@@ -93,7 +105,10 @@ def _ler_csv(conteudo):
         delim = dialeto.delimiter
     except csv.Error:
         delim = ";" if texto.split("\n", 1)[0].count(";") else ","
-    return [[_celula(c) for c in linha] for linha in csv.reader(io.StringIO(texto), delimiter=delim)]
+    try:
+        return [[_celula(c) for c in linha[:MAX_COLUNAS]] for linha in csv.reader(io.StringIO(texto), delimiter=delim)]
+    except csv.Error as e:
+        raise PlanilhaInvalida(f"CSV inválido ({e}); salve como .xlsx") from e
 
 
 def ler_arquivo(nome, conteudo):

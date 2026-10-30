@@ -38,7 +38,7 @@ def instalar(app):
             return None
         enviado = request.form.get("_csrf") or request.headers.get("X-CSRF-Token") or ""
         esperado = session.get("_csrf") or ""
-        if not esperado or not hmac.compare_digest(enviado, esperado):
+        if not esperado or not hmac.compare_digest(enviado.encode(), esperado.encode()):
             abort(400, "Formulário expirado: recarregue a página e tente de novo.")
         return None
 

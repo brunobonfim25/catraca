@@ -31,15 +31,22 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     # Na nuvem (HTTPS) o cookie de sessão não deve viajar em HTTP
-    SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
+    # Na nuvem isto não é opcional (auditoria de 30/10): sem Secure, um link http:// no Wi-Fi da
+    # escola mandava o cookie de superadmin em claro; __Host- impede cookie plantado por subdomínio
+    _MODO = os.environ.get("MODO", "unico")
+    # Só o teste ponta a ponta (tests/test_agente.py) sobe uma "nuvem" em http://127.0.0.1; fora
+    # dele esta variável não existe e a nuvem é sempre HTTPS + CSRF.
+    _NUVEM_SEGURA = _MODO == "nuvem" and os.environ.get("NEXOSIX_INSEGURO_SO_PARA_TESTES") != "1"
+    SESSION_COOKIE_SECURE = _NUVEM_SEGURA or os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
+    SESSION_COOKIE_NAME = "__Host-session" if _NUVEM_SEGURA else "session"
     PERMANENT_SESSION_LIFETIME = 60 * 60 * 10
-    CSRF_ATIVO = os.environ.get("CSRF_ATIVO", "1") == "1"
+    CSRF_ATIVO = _NUVEM_SEGURA or os.environ.get("CSRF_ATIVO", "1") == "1"
 
     # Onde este processo roda:
     #   nuvem → o sistema: painel, cadastro, Telegram; manda comandos e cadastro pro agente
     #   local → agente na escola: só a catraca (Monitor, modo Pro, fotos, coleta) + cópia local
     #   unico → tudo junto numa máquina (desenvolvimento, ou escola sem nuvem)
-    MODO = os.environ.get("MODO", "unico")
+    MODO = _MODO
     # Agente: id da unidade (definido na nuvem), URL da nuvem e token gerado lá (token-espelho)
     UNIDADE_ID = int(os.environ.get("UNIDADE_ID", "0") or 0)
     NUVEM_URL = os.environ.get("NUVEM_URL", "").rstrip("/")

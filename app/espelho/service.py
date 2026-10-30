@@ -550,8 +550,32 @@ def ip_privado(ip):
     return a.version == 4 and a.is_private and not a.is_loopback and not a.is_link_local
 
 
+def _ping_saneado(dados):
+    """Auditoria de 30/10: o que o agente manda vai parar em unidades.config e é lido pelo vigia e
+    pelo painel. "desvio_relogio_seg": "x" derrubava alertas.verificar() para todas as escolas."""
+    def texto(v, n):
+        return str(v)[:n] if v is not None else None
+
+    def inteiro(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
+    def curto(v, n=500):
+        try:
+            return v if len(json.dumps(v, default=str)) <= n else None
+        except (TypeError, ValueError):
+            return None
+
+    regras = {"versao": lambda v: texto(v, 40), "schema": lambda v: texto(v, 40), "base_url": lambda v: texto(v, 200),
+              "ip_lan": lambda v: texto(v, 45), "outbox_pendentes": inteiro, "desvio_relogio_seg": inteiro,
+              "web_ok": lambda v: v if isinstance(v, bool) else None, "cursor": curto, "catraca_contato": curto}
+    return {k: f(dados.get(k)) for k, f in regras.items() if k in dados}
+
+
 def registrar_ping(unidade, dados):
-    agente = {k: dados.get(k) for k in ("versao", "schema", "base_url", "ip_lan", "outbox_pendentes", "cursor", "web_ok", "catraca_contato", "desvio_relogio_seg") if k in dados}
+    agente = _ping_saneado(dados if isinstance(dados, dict) else {})
     if agente.get("ip_lan") is not None and not ip_privado(agente["ip_lan"]):
         log.warning("unidade %s: ping com ip_lan não privado (%s) — ignorado", unidade["id"], agente["ip_lan"])
         agente["ip_lan"] = None
