@@ -207,6 +207,24 @@ def _referencias_ok(cur, tabela, dados, unidade):
 # O agente não precisa da trilha de auditoria da nuvem (e ela cresce)
 IGNORADAS_NO_AGENTE = {"auditoria", "consentimentos_lgpd"}
 
+# Auditoria de 30/10 (LGPD, minimização): o PC da escola pode ser roubado e o agente não usa nada
+# disto — ele só decide catraca e gera eventos. CPF, contatos e o token de ativação do Telegram
+# ficam na nuvem; o e-mail dos usuários vira um marcador (a coluna é NOT NULL UNIQUE no agente).
+OCULTAS_NO_AGENTE = {
+    "pessoas": {"documento"},
+    "responsaveis": {"telefone", "email", "telegram_chat_id", "telegram_token", "telegram_token_em", "telegram_bloqueado_em"},
+    "usuarios_admin": {"senha_hash", "email"},
+}
+
+
+def ocultar_do_agente(tabela, dados):
+    if dados is None:
+        return None
+    d = {k: v for k, v in dados.items() if k not in OCULTAS_NO_AGENTE.get(tabela, ())}
+    if tabela == "usuarios_admin":
+        d["email"] = f"usuario-{d.get('id')}@oculto.invalid"
+    return d
+
 
 class _Rejeitado(Exception):
     pass
@@ -247,6 +265,13 @@ def _aplicar_item(cur, item, unidade, lado):
         raise _Rejeitado(f"{tabela} de outra escola")
     if do_agente and not _referencias_ok(cur, tabela, dados, unidade):
         raise _Rejeitado(f"{tabela} aponta para outra escola")
+    if do_agente and tabela == "eventos" and dados.get("id") is not None:
+        # Auditoria de 30/10: liberação manual (recepção, com justificativa) é da nuvem; um PC
+        # comprometido não pode reescrever quem autorizou nem o motivo.
+        cur.execute("SELECT origem FROM eventos WHERE id = %s", (dados["id"],))
+        ant = cur.fetchone()
+        if ant and ant["origem"] != "dispositivo":
+            raise _Rejeitado("evento manual/sistema só a nuvem altera")
     if do_agente and tabela == "dispositivos":
         # config: só as chaves que o agente escreve; o resto (IP de VPN, sentidos…) é da nuvem
         dados["config"] = {k: v for k, v in (dados.get("config") or {}).items() if k in CONFIG_DO_AGENTE}
@@ -475,18 +500,18 @@ def lote_para_agente(unidade, desde_xid="0", desde_id=0, limite=500, max_bytes=L
         linhas = cur.fetchall()
         por_tabela = {}
         for l in linhas:
-            if l["tabela"] in TABELAS:
+            if l["tabela"] in TABELAS and l["tabela"] not in IGNORADAS_NO_AGENTE:
                 por_tabela.setdefault(l["tabela"], []).append(l["chave"])
         atuais = {t: _linhas_atuais(cur, t, ch) for t, ch in por_tabela.items()}
     itens, vistos, tamanho, ate, cortado = [], set(), 0, None, False
     for l in linhas:
-        if l["tabela"] not in TABELAS:
+        if l["tabela"] not in TABELAS or l["tabela"] in IGNORADAS_NO_AGENTE:
             ate = {"xid": l["xid"], "id": l["id"]}
             continue
         pks = TABELAS[l["tabela"]][0]
         k = (l["tabela"],) + tuple(l["chave"].get(p) for p in pks)
         if k not in vistos:
-            dados = atuais[l["tabela"]].get(k[1:])
+            dados = ocultar_do_agente(l["tabela"], atuais[l["tabela"]].get(k[1:]))
             item = ({"id": l["id"], "tabela": l["tabela"], "operacao": "upsert", "chave": l["chave"], "dados": dados} if dados is not None
                     else {"id": l["id"], "tabela": l["tabela"], "operacao": "delete", "chave": l["chave"]})
             n = len(_json(item))
@@ -522,7 +547,7 @@ def snapshot(unidade):
             expr = "to_jsonb(s) - 'senha_hash'" if tabela == "usuarios_admin" else "to_jsonb(s)"
             cur.execute(f"SELECT {expr} AS d FROM ({sql}) s", {"u": unidade["id"]})
             for r in cur.fetchall():
-                d = r["d"]
+                d = ocultar_do_agente(tabela, r["d"])
                 itens.append({"id": 0, "tabela": tabela, "operacao": "upsert", "chave": {k: d[k] for k in TABELAS[tabela][0]}, "dados": d})
     if (unidade.get("config") or {}).get("espelho_recarga"):
         _marcar(unidade["id"], {"espelho_recarga": False})

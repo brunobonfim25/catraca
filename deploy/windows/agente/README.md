@@ -67,10 +67,13 @@ energia das placas de rede e deixa o Wi-Fi em desempenho máximo.
 | `C:\nexosix\pgsql`, `dados\pg` | PostgreSQL próprio, porta **5439**, só `127.0.0.1` |
 | `C:\nexosix\logs` | `instalacao.log`, logs dos serviços, `backup.log` |
 | `C:\nexosix\backups` | cópia diária do banco (23:30), 14 dias |
-| Serviços | `NexosixBanco`, `NexosixAgente` (porta 80, a catraca chama), `NexosixWorker` — automáticos, religam sozinhos se caírem |
-| Firewall | entrada TCP 80 só para `C:\nexosix\python\python.exe` |
+| Serviços | `NexosixBanco` (NetworkService), `NexosixAgente` (porta 80, a catraca chama) e `NexosixWorker` (os dois como **LocalService**, sem privilégio) — automáticos, religam sozinhos se caírem |
+| Firewall | entrada TCP 80 só para `C:\nexosix\python\python.exe` e **só da rede local** (LocalSubnet) |
 
-A pasta `C:\nexosix` só é acessível a SYSTEM e Administradores (o `.env` e as fotos não ficam
+**Ligue o BitLocker** no PC (Windows 11 Pro tem): o banco local tem as fotos dos alunos e a cópia diária
+em `backups` não é cifrada; com o disco cifrado, PC roubado não vira vazamento.
+
+A pasta `C:\nexosix` só é acessível a SYSTEM e Administradores (LocalService só lê o programa; o `.env` e as fotos não ficam
 expostos a quem usa o PC da recepção).
 
 ## Problemas comuns

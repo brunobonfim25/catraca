@@ -45,6 +45,15 @@ o "Exemplo API Monitor" e o "Servidor Online" usam exatamente os endpoints acima
 - **Fotos**: < 2 MB, JPG/PNG, rosto frontal. Erros 2 (sem rosto), 3 (rosto já existe, `match=1`), 4 (descentrado), 5/6 (longe/perto), 7 (inclinado), 8 (desfocada), 9 (perto da borda).
 - **Usuário**: `registration` recebe o id da pessoa no Nexosix (reconcilia se o `user_id` se perder). `end_time` expirado **apaga as credenciais** no equipamento — por isso `revoke()` só tira regras, não mexe em `end_time`.
 
+## Segurança da rede da escola (auditoria de 30/10)
+
+A Control iD fala **HTTP sem TLS**: a senha admin da catraca vai em claro no `login.fcgi` e o token do
+Monitor vai na URL. Na LAN da escola isso é risco aceito e mitigado por: catraca e servidor da escola
+na mesma rede cabeada, de preferência numa VLAN só deles (sem o Wi-Fi dos pais); firewall do PC só
+aceita a porta 80 da rede local; token do Monitor por escola, trocável pelo painel. Quando a nuvem
+assume (failover), o token vai na URL pela internet com HTTPS — o Railway grava o caminho no log de
+acesso; por isso o token é por escola e deve ser girado se houver suspeita.
+
 ## Suposições a confirmar na catraca (marcadas `[SUP]`/`[HW]` no código)
 
 1. Sessão inválida responde **HTTP 401** (o adaptador reloga uma vez). A doc não informa o código.

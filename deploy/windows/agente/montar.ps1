@@ -16,11 +16,13 @@ $ProgressPreference = 'SilentlyContinue'
 $REPO = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 $PY_VERSAO = '3.13.14'
 $PG_VERSAO = '16.15-1'
+# Auditoria de 30/10: os hashes eram variáveis de ambiente que o workflow nunca definia — a
+# conferência nunca rodava. Fixos aqui (medidos na build 1.0.1); mudou o arquivo, a build falha.
 $DOWNLOADS = @(
-    @{ Nome = 'python.zip'; Url = "https://www.python.org/ftp/python/$PY_VERSAO/python-$PY_VERSAO-embed-amd64.zip"; Sha = $env:SHA_PYTHON },
-    @{ Nome = 'pgsql.zip'; Url = "https://get.enterprisedb.com/postgresql/postgresql-$PG_VERSAO-windows-x64-binaries.zip"; Sha = $env:SHA_PGSQL },
-    @{ Nome = 'WinSW.exe'; Url = 'https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW.NET461.exe'; Sha = $env:SHA_WINSW },
-    @{ Nome = 'vc_redist.x64.exe'; Url = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'; Sha = '' }
+    @{ Nome = 'python.zip'; Url = "https://www.python.org/ftp/python/$PY_VERSAO/python-$PY_VERSAO-embed-amd64.zip"; Sha = '90b4e5b9898b72d744650524bff92377c367f44bd5fbd09e3148656c080ad907' },
+    @{ Nome = 'pgsql.zip'; Url = "https://get.enterprisedb.com/postgresql/postgresql-$PG_VERSAO-windows-x64-binaries.zip"; Sha = '25e6fcdfb8caec38691bf461125e7564508760666f7b8e5dc6a5f0818f58f81e' },
+    @{ Nome = 'WinSW.exe'; Url = 'https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW.NET461.exe'; Sha = 'b5066b7bbdfba1293e5d15cda3caaea88fbeab35bd5b38c41c913d492aadfc4f' },
+    @{ Nome = 'vc_redist.x64.exe'; Url = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'; Sha = 'cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b' }
 )
 
 function Passo($t) { Write-Host "`n==> $t" -ForegroundColor Cyan }

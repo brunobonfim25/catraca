@@ -270,6 +270,20 @@ Depois de ouvir um integrador Control iD (condomínio, colégio, clube), o Bruno
   Railway com `RAILWAY_WEBHOOK_TOKEN`; vigia externo (UptimeRobot) em `/health` e `/health/worker`.
 - **Backup** (28/10): banco tem ~220 MB. Agendamento de backup do Railway (Postgres →
   Backups) precisa ser ligado pela tela — pela API não gravou.
+- **Auditoria de segurança (30/10, 5 frentes: auth/RBAC, injeção, APIs de máquina, segredos/instalador,
+  LGPD)**: correções em `tests/test_auditoria_seguranca.py` (recepção sem cadastro, cookie/CSRF
+  forçados na nuvem, CSV injection, IP da catraca validado + senha reexigida, miniatura auditada,
+  troca de telefone desvincula Telegram, limites da planilha, ping saneado, minimização do que desce
+  ao agente, evento manual só a nuvem altera, backup em chat dedicado com retenção de 8 envios,
+  SRI no CDN, cryptography 50, instalador: hashes fixos, dono da pasta, LocalService, firewall só
+  rede local). **Ainda abertos** (por ordem): rotação do `monitor_token` pelo painel e tirá-lo da URL
+  se o firmware permitir; sessão revogável no servidor (logout de todos + teto de 12 h); CSP com nonce;
+  bloqueio de login por e-mail é vetor de DoS (bloquear por e-mail+IP); confirmar como o Railway trata
+  `X-Forwarded-For`; `/start` do Telegram sem telefone cadastrado ativa sem confirmação; anonimizar
+  pessoa / encerrar unidade (contrato 11.5) e retenção de eventos configurável; consentimento em papel
+  com texto/arquivo obrigatório; funcionário sem base legal registrada; auditoria imutável (REVOKE);
+  exportar dados de uma pessoa; backup local do agente cifrado (BitLocker no checklist); assinatura
+  do .exe; `requirements` com hashes e `pip-audit` no CI; `ADMIN_EMAIL` real fora do `.env.example`.
 - **Pendentes**: certificado de assinatura de código para o .exe; planilha de alunos da escola (mandar o modelo); conta Brevo para o convite
   por e-mail; PC chegar e aparecer como "agente visto"; Cloudflare para a redundância por
   DNS (o `nexosix.com.br` fica no DNS do Registro.br, sem API; sugestão: domínio separado só das

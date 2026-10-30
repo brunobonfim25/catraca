@@ -190,10 +190,27 @@ def _telegram_documento(chat, caminho, legenda):
     dados = r.json() if r.content else {}
     if not r.ok or not dados.get("ok"):
         raise TelegramErro(r.status_code, dados.get("description") or r.text[:200])
+    return (dados.get("result") or {}).get("message_id")
+
+
+def _telegram_apagar(chat, message_id):
+    import requests
+
+    from .notificacoes.telegram import API, _cfg
+
+    try:
+        requests.post(API.format(token=_cfg("TELEGRAM_BOT_TOKEN"), metodo="deleteMessage"), json={"chat_id": chat, "message_id": message_id}, timeout=30)
+    except Exception:  # noqa: BLE001 — retenção é melhor esforço; não derruba o envio novo
+        log.warning("não consegui apagar a parte antiga %s do backup no Telegram", message_id)
+
+
+# Auditoria de 30/10 (LGPD): o backup tem as fotos de todas as escolas. Vai só para um chat
+# dedicado (nunca o grupo de alertas, que tem mais gente) e as cópias antigas são apagadas de lá.
+RETENCAO_BACKUPS = 8
 
 
 def configuracao():
-    chat = os.environ.get("BACKUP_TELEGRAM_CHAT") or os.environ.get("ALERTA_TELEGRAM_CHAT") or ""
+    chat = os.environ.get("BACKUP_TELEGRAM_CHAT") or ""
     return chat, os.environ.get("BACKUP_SENHA", "")
 
 
@@ -213,17 +230,26 @@ def gerar_partes(pasta, senha, nome=None):
 def enviar_agora(enviar=None):
     chat, senha = configuracao()
     if not chat or not senha:
-        raise BackupErro("configure BACKUP_SENHA e BACKUP_TELEGRAM_CHAT (ou ALERTA_TELEGRAM_CHAT) no worker")
+        raise BackupErro("configure BACKUP_SENHA e BACKUP_TELEGRAM_CHAT (um chat só para isto) no worker")
     enviar = enviar or _telegram_documento
     with tempfile.TemporaryDirectory() as pasta:
         resumo, partes = gerar_partes(pasta, senha)
         total = sum(os.path.getsize(p) for p in partes)
+        mensagens = []
         for i, p in enumerate(partes, 1):
-            enviar(chat, p, f"Backup Nexosix {resumo['criado_em'][:10]} — parte {i}/{len(partes)} "
-                            f"({sum(resumo['tabelas'].values())} linhas). Guarde todas as partes; a senha está com você.")
+            mid = enviar(chat, p, f"Backup Nexosix {resumo['criado_em'][:10]} — parte {i}/{len(partes)} "
+                                  f"({sum(resumo['tabelas'].values())} linhas). Guarde todas as partes; a senha está com você.")
+            if mid:
+                mensagens.append(mid)
+    anterior = (ultimo() or {}).get("valor") or {}
+    historico = list(anterior.get("historico") or []) + [{"em": resumo["criado_em"], "chat": str(chat), "mensagens": mensagens}]
+    for antigo in historico[:-RETENCAO_BACKUPS]:
+        for mid in antigo.get("mensagens") or []:
+            _telegram_apagar(antigo.get("chat") or chat, mid)
+    historico = historico[-RETENCAO_BACKUPS:]
     db.execute("INSERT INTO sistema_status (chave, valor, atualizado_em) VALUES ('backup:externo', %s, now()) "
                "ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = now()",
-               (Json({"partes": len(partes), "bytes": total, "versao": resumo["versao"], "erro": None}),), outbox=False)
+               (Json({"partes": len(partes), "bytes": total, "versao": resumo["versao"], "erro": None, "historico": historico}),), outbox=False)
     log.info("backup externo enviado: %d parte(s), %.1f MB", len(partes), total / 1e6)
     return len(partes), total
 

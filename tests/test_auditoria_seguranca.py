@@ -107,3 +107,69 @@ def test_ping_malformado_nao_derruba_os_alertas(app, seed):
     ag = db.query("SELECT config->'agente' AS a FROM unidades WHERE id = %s", (uid,), one=True)["a"]
     assert ag["desvio_relogio_seg"] is None and ag["schema"] == "1" and ag["web_ok"] is None and ag["cursor"] is None and len(ag["versao"]) == 40
     assert isinstance(verificacoes(), list)
+
+
+def test_agente_nao_recebe_cpf_contatos_nem_token_do_telegram(outbox_ligado, sincronizado):
+    """LGPD: o PC da escola pode ser roubado; CPF, telefone, e-mail e token de ativação ficam na nuvem."""
+    from app.espelho import service as espelho
+
+    uid = sincronizado["unidade"]["id"]
+    db.execute("UPDATE pessoas SET documento = '123.456.789-00' WHERE id = %s", (sincronizado["ana"]["pessoa_id"],))
+    db.execute("UPDATE responsaveis SET telefone = '21999990001', email = 'ana@x.com', telegram_chat_id = 7, telegram_token = 'tk' WHERE id = %s", (sincronizado["ana"]["responsavel_id"],))
+    s = espelho.snapshot(sincronizado["unidade"])
+    por = {}
+    for i in s["itens"]:
+        por.setdefault(i["tabela"], []).append(i["dados"])
+    assert all("documento" not in d for d in por["pessoas"])
+    assert all(not ({"telefone", "email", "telegram_chat_id", "telegram_token"} & set(d)) for d in por["responsaveis"])
+    assert all(d["email"].endswith("@oculto.invalid") and "senha_hash" not in d for d in por["usuarios_admin"])
+    # o mesmo vale pro que desce depois, pelo reverso
+    db.execute("DELETE FROM espelho_outbox")
+    db.contexto.unidade_id = uid
+    db.execute("UPDATE responsaveis SET telefone = '21999990002' WHERE id = %s", (sincronizado["ana"]["responsavel_id"],))
+    db.execute("INSERT INTO auditoria (unidade_id, acao, entidade, entidade_id) VALUES (%s, 'x', 'pessoa', '1')", (uid,))
+    lote = espelho.lote_para_agente(sincronizado["unidade"])
+    tabelas = {i["tabela"] for i in lote["itens"]}
+    assert "responsaveis" in tabelas and "auditoria" not in tabelas
+    assert all("telefone" not in i["dados"] for i in lote["itens"] if i["tabela"] == "responsaveis")
+
+
+def test_agente_nao_reescreve_liberacao_manual(seed):
+    """Um PC comprometido não pode mudar quem autorizou nem a justificativa de uma liberação manual."""
+    from app.espelho import service as espelho
+    from app.eventos import service as eventos
+
+    uid = seed["unidade"]["id"]
+    db.execute("""UPDATE unidades SET config = config || '{"espelho_token": "tok-x"}' WHERE id = %s""", (uid,))
+    ev = eventos.registrar(uid, "SAIDA_ANTECIPADA", eventos.agora_utc(), dispositivo_id=seed["dispositivo"]["id"], pessoa_id=seed["maria"]["pessoa_id"],
+                           sentido="saida", origem="manual", autorizado_por=seed["admin"]["id"], justificativa="consulta")
+    dados = dict(ev)
+    dados["ocorrido_em"] = dados["ocorrido_em"].isoformat()
+    dados["justificativa"] = "nada"
+    dados["autorizado_por"] = None
+    unidade = db.query("SELECT * FROM unidades WHERE id = %s", (uid,), one=True)
+    aplicados, rejeitados = espelho.aplicar_lote(unidade, [{"id": 1, "tabela": "eventos", "operacao": "upsert", "chave": {"id": ev["id"]}, "dados": dados}], lado="nuvem")
+    assert rejeitados == 1
+    assert db.query("SELECT justificativa FROM eventos WHERE id = %s", (ev["id"],), one=True)["justificativa"] == "consulta"
+
+
+def test_backup_so_em_chat_dedicado_e_com_retencao(seed, monkeypatch):
+    """O backup (fotos de todas as escolas) caía no grupo de alertas e ficava lá para sempre."""
+    from app import backup
+
+    monkeypatch.setenv("BACKUP_SENHA", "senha-muito-longa-123")
+    monkeypatch.setenv("ALERTA_TELEGRAM_CHAT", "99")
+    monkeypatch.delenv("BACKUP_TELEGRAM_CHAT", raising=False)
+    assert backup.configuracao()[0] == ""  # sem fallback pro grupo de alertas
+    monkeypatch.setenv("BACKUP_TELEGRAM_CHAT", "42")
+    antigos = [{"em": f"2026-0{i}-01", "chat": "42", "mensagens": [100 + i]} for i in range(1, 9)]
+    import json as _json
+    db.execute("INSERT INTO sistema_status (chave, valor, atualizado_em) VALUES ('backup:externo', %s, now() - interval '8 days')",
+               (_json.dumps({"historico": antigos}),), outbox=False)
+    apagadas = []
+    monkeypatch.setattr(backup, "_telegram_apagar", lambda chat, mid: apagadas.append((chat, mid)))
+    contador = iter(range(500, 600))
+    backup.enviar_agora(enviar=lambda chat, caminho, legenda: next(contador))
+    assert apagadas == [("42", 101)]  # só o mais velho sai; ficam os 8 últimos
+    hist = db.query("SELECT valor FROM sistema_status WHERE chave = 'backup:externo'", one=True)["valor"]["historico"]
+    assert len(hist) == 8 and hist[-1]["mensagens"][0] == 500

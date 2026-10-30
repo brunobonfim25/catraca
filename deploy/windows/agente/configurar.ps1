@@ -40,6 +40,9 @@ switch ($Etapa) {
 
     # .env (token da escola, senha do banco) e o banco (fotos = dado biométrico): só SYSTEM e
     # Administradores. Antes qualquer usuário do PC da recepção lia o .env e virava o "agente".
+    # Auditoria de 30/10: se um usuário comum criou C:\nexosix antes, ele continuava dono e podia se
+    # dar acesso de volta (e o backup roda como SYSTEM daqui). Dono passa a ser Administradores.
+    Rodar 'takeown.exe' @('/F', $RAIZ, '/R', '/A', '/D', 'S') -PodeFalhar | Out-Null
     Rodar 'icacls.exe' @($RAIZ, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F') | Out-Null
     foreach ($d in 'app', 'python', 'pgsql', 'servicos', 'instalador', 'logs', 'backups') {
         $p = Join-Path $RAIZ $d
@@ -195,6 +198,10 @@ switch ($Etapa) {
 } }
 
 'servicos' { Etapa 'servicos' {
+    # Auditoria de 30/10: o agente (porta 80, aberta pra rede) rodava como SYSTEM. Agora roda como
+    # LocalService (S-1-5-19): lê programa e .env, escreve só em logs e servicos.
+    foreach ($d in 'app', 'python', 'pgsql') { Rodar 'icacls.exe' @((Join-Path $RAIZ $d), '/grant', '*S-1-5-19:(OI)(CI)RX') | Out-Null }
+    foreach ($d in 'servicos', 'logs') { Rodar 'icacls.exe' @((Join-Path $RAIZ $d), '/grant', '*S-1-5-19:(OI)(CI)M') | Out-Null }
     $lista = @(
         @{ Nome = $SVC_AGENTE; Titulo = 'Nexosix - Servidor da escola'; Args = 'serve.py'
            Desc = 'Atende a catraca (Monitor e modo Pro) e guarda a cópia local do cadastro da escola.' },
@@ -216,6 +223,7 @@ switch ($Etapa) {
   <id>$($s.Nome)</id>
   <name>$($s.Titulo)</name>
   <description>$($s.Desc)</description>
+  <serviceaccount><username>NT AUTHORITY\LocalService</username></serviceaccount>
   <executable>$PY</executable>
   <arguments>$($s.Args)</arguments>
   <workingdirectory>$APP</workingdirectory>
@@ -231,6 +239,7 @@ switch ($Etapa) {
   <env name="PYTHONUNBUFFERED" value="1"/>
   <env name="PYTHONIOENCODING" value="utf-8"/>
   <env name="PYTHONUTF8" value="1"/>
+  <env name="PYTHONDONTWRITEBYTECODE" value="1"/>
 </service>
 "@
         [IO.File]::WriteAllText((Join-Path $SERVICOS "$($s.Nome).xml"), $xml, (New-Object Text.UTF8Encoding $false))
@@ -242,8 +251,9 @@ switch ($Etapa) {
 
     Get-NetFirewallRule -DisplayName $REGRA_FIREWALL -ErrorAction SilentlyContinue | Remove-NetFirewallRule
     New-NetFirewallRule -DisplayName $REGRA_FIREWALL -Description 'A catraca chama o servidor da escola nesta porta.' `
-        -Direction Inbound -Action Allow -Protocol TCP -LocalPort $PORTA -Program $PY -Profile Any | Out-Null
-    Log "firewall: porta $PORTA liberada para $PY"
+        -Direction Inbound -Action Allow -Protocol TCP -LocalPort $PORTA -Program $PY -Profile Any -RemoteAddress LocalSubnet | Out-Null
+    # Auditoria de 30/10: antes qualquer origem; a catraca está na rede local da escola
+    Log "firewall: porta $PORTA liberada para $PY (só rede local)"
 
     $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $acao = New-ScheduledTaskAction -Execute $ps -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot 'backup.ps1')`""
